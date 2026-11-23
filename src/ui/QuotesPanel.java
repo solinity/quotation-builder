@@ -32,6 +32,7 @@ public class QuotesPanel extends JPanel {
     private final JTextField dateField = new JTextField(12);
     private final JTextField discountField = new JTextField(8);
     private final JTextField quantityField = new JTextField(8);
+    private final JTextField itemDiscountField = new JTextField(8);
     private final JTextField searchField = new JTextField(12);
     private final JLabel editorMode = new JLabel();
     private final JLabel results = new JLabel();
@@ -112,6 +113,7 @@ public class QuotesPanel extends JPanel {
         FormPanel itemFields = new FormPanel();
         itemFields.addField("Offering", offeringChoices);
         itemFields.addField("Quantity / hours", quantityField);
+        itemFields.addField("Item discount (%)", itemDiscountField);
 
         JPanel itemButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
         JButton add = new JButton("Add Item");
@@ -186,10 +188,12 @@ public class QuotesPanel extends JPanel {
                 throw new IllegalArgumentException("Select an offering. Add one in Offerings if needed.");
             }
             double quantity = readNumber(quantityField, "quantity");
-            QuoteItem item = new QuoteItem(offering, quantity, offering.getUnitPrice());
+            double discount = itemDiscountField.getText().isBlank() ? 0 : readNumber(itemDiscountField, "item discount");
+            QuoteItem item = new QuoteItem(offering, quantity, offering.getUnitPrice(), discount);
             getDraft().addItem(item);
             itemModel.addElement(item);
             quantityField.setText("");
+            itemDiscountField.setText("0");
             showTotals();
         } catch (IllegalArgumentException error) {
             showError(error.getMessage());
@@ -263,6 +267,7 @@ public class QuotesPanel extends JPanel {
         statusChoices.setSelectedItem(draft.getStatus());
         discountField.setText(Double.toString(draft.getDiscountPercent()));
         quantityField.setText("");
+        itemDiscountField.setText("0");
         itemModel.clear();
         for (QuoteItem item : draft.getItems()) {
             itemModel.addElement(item);
@@ -281,6 +286,7 @@ public class QuotesPanel extends JPanel {
         statusChoices.setSelectedItem(Quote.Status.DRAFT);
         discountField.setText("0");
         quantityField.setText("");
+        itemDiscountField.setText("0");
         itemModel.clear();
         refreshEditorMode();
         showTotals();

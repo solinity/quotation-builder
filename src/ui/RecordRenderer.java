@@ -48,8 +48,10 @@ class RecordRenderer extends DefaultListCellRenderer {
             Offering offering = item.getOffering();
             int number = dataStore.getOfferingNumber(offering);
             String prefix = number > 0 ? "#" + number + "  " : "[Deleted] ";
+            double discount = item.getDiscountPercent();
+            String discountLabel = discount > 0 ? " (" + discount + "% off)" : "";
             return prefix + offering.getName() + "  |  " + item.getQuantity()
-                    + " x " + amount(item.getUnitPrice()) + " = " + amount(item.getLineTotal());
+                    + " x " + amount(item.getUnitPrice()) + discountLabel + " = " + amount(item.getLineTotal());
         }
         return "";
     }

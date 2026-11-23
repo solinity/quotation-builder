@@ -172,26 +172,36 @@ public class SwingTest {
             expectError(quotes, "Add Item", invalid.equals("1e308") ? "line total is too large" : message);
         }
         ModelTest.check(items.getModel().getSize() == 0, "invalid quantities never create items");
+        JTextField itemDiscount = field(quotes, "Item discount (%)");
+        field(quotes, "Quantity / hours").setText("2");
+        for (String invalid : new String[] {"abc", "-1", "101", "NaN", "Infinity"}) {
+            itemDiscount.setText(invalid);
+            expectError(quotes, "Add Item", invalid.equals("abc") ? "numerical item discount" : "between 0 and 100");
+        }
+        ModelTest.check(items.getModel().getSize() == 0, "invalid item discounts never create items");
+        itemDiscount.setText("");
         addItem(quotes, 1, "2");
+        itemDiscount.setText("12.5");
         addItem(quotes, 2, "2");
+        ModelTest.check(itemDiscount.getText().equals("0"), "next item defaults to zero discount");
         addItem(quotes, 0, "1");
         ModelTest.check(items.getModel().getSize() == 3, "add three items");
         items.setSelectedIndex(2);
         click(quotes, "Remove Item");
-        label(quotes, "Subtotal: 300.00");
+        label(quotes, "Subtotal: 292.50");
 
         JTextField discount = field(quotes, "Discount (%)");
         for (String invalid : new String[] {"abc", "-1", "101", "NaN", "Infinity"}) {
             discount.setText(invalid);
             expectError(quotes, "Calculate", invalid.equals("abc") ? "numerical discount" : "between 0 and 100");
         }
-        label(quotes, "Total: 300.00 (0.0% discount)");
+        label(quotes, "Total: 292.50 (0.0% discount)");
         discount.setText("100");
         click(quotes, "Calculate");
         label(quotes, "Total: 0.00 (100.0% discount)");
         discount.setText("10");
         click(quotes, "Calculate");
-        label(quotes, "Total: 270.00 (10.0% discount)");
+        label(quotes, "Total: 263.25 (10.0% discount)");
 
         JTextField date = field(quotes, "Date (YYYY-MM-DD)");
         date.setText("2026-02-30");
@@ -204,7 +214,8 @@ public class SwingTest {
         Quote quote = store.getQuote(0);
         ModelTest.check(quote.getClient() == store.getClient(1) && quote.getItems().get(0).getOffering() == store.getOffering(1),
                 "saved quotation uses the selected client and offering objects");
-        ModelTest.check(quote.getStatus() == Quote.Status.SENT && quote.getTotal() == 270, "saved quote totals and status");
+        ModelTest.check(quote.getStatus() == Quote.Status.SENT && quote.getTotal() == 263.25
+                && quote.getItems().get(1).getDiscountPercent() == 12.5, "saved quote totals, status and item discount");
 
         click(quotes, "New Quote");
         ModelTest.check(items.getModel().getSize() == 0 && clients.getSelectedIndex() == -1, "new quote clears editor");
@@ -222,6 +233,7 @@ public class SwingTest {
                 "open restores the selected quotation");
         ModelTest.check(date.getText().equals("2026-11-23") && statuses.getSelectedItem() == Quote.Status.SENT
                 && discount.getText().equals("10.0"), "open restores date, status and discount");
+        label(quotes, "Total: 263.25 (10.0% discount)");
         click(quotes, "Show All");
         capture("quotations.png");
 

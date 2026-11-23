@@ -63,13 +63,18 @@ public class ModelTest {
         check(item.getOffering() == first && item.getLineTotal() == 120, "fractional quantity and offering identity");
         quote.addItem(item);
         check(quote.getSubtotal() == 120 && quote.getTotal() == 120, "single item and zero discount");
-        quote.addItem(new QuoteItem(second, 2, 20));
+        QuoteItem discounted = new QuoteItem(second, 2, 20, 25);
+        check(discounted.getDiscountPercent() == 25 && discounted.getLineTotal() == 30,
+                "item discount applies to the line total");
+        check(new QuoteItem(second, 2, 20, 100).getLineTotal() == 0, "100 percent item discount");
+        quote.addItem(discounted);
         quote.setDiscountPercent(25);
-        check(quote.getSubtotal() == 160 && quote.getTotal() == 120, "multiple items and partial discount");
+        check(quote.getSubtotal() == 150 && quote.getTotal() == 112.5,
+                "quote discount applies after item discounts");
         quote.setDiscountPercent(100);
         check(quote.getTotal() == 0, "100 percent discount");
         quote.removeItem(item);
-        check(quote.getSubtotal() == 40, "remove one of multiple items");
+        check(quote.getSubtotal() == 30, "remove one of multiple items");
         quote.getItems().clear();
         check(quote.getItems().size() == 1, "external list changes do not affect quote");
 
@@ -87,6 +92,7 @@ public class ModelTest {
         }
         for (double invalid : new double[] {-1, 100.1, Double.NaN, Double.POSITIVE_INFINITY}) {
             rejects(() -> quote.setDiscountPercent(invalid), "invalid discount");
+            rejects(() -> new QuoteItem(first, 1, 10, invalid), "invalid item discount");
         }
         check(quote.getDiscountPercent() == 100 && new QuoteItem(first, 1, 0).getLineTotal() == 0,
                 "invalid discount has no effect and zero-priced item is valid");

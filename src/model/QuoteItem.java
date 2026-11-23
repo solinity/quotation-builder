@@ -8,8 +8,13 @@ public class QuoteItem implements Serializable {
     private final Offering offering;
     private final double quantity;
     private final double unitPrice;
+    private final double discountPercent;
 
     public QuoteItem(Offering offering, double quantity, double unitPrice) {
+        this(offering, quantity, unitPrice, 0);
+    }
+
+    public QuoteItem(Offering offering, double quantity, double unitPrice, double discountPercent) {
         if (offering == null) {
             throw new IllegalArgumentException("Select an offering.");
         }
@@ -22,10 +27,14 @@ public class QuoteItem implements Serializable {
         if (!Double.isFinite(quantity * unitPrice)) {
             throw new IllegalArgumentException("The line total is too large.");
         }
+        if (!Double.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+            throw new IllegalArgumentException("Item discount must be a finite number between 0 and 100.");
+        }
 
         this.offering = offering;
         this.quantity = quantity;
         this.unitPrice = unitPrice == 0 ? 0 : unitPrice;
+        this.discountPercent = discountPercent == 0 ? 0 : discountPercent;
     }
 
     public Offering getOffering() {
@@ -40,7 +49,11 @@ public class QuoteItem implements Serializable {
         return unitPrice;
     }
 
+    public double getDiscountPercent() {
+        return discountPercent;
+    }
+
     public double getLineTotal() {
-        return quantity * unitPrice;
+        return quantity * unitPrice * (1 - discountPercent / 100.0);
     }
 }
