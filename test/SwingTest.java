@@ -16,6 +16,7 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
+import javax.swing.JPopupMenu;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -150,22 +151,30 @@ public class SwingTest {
         Component quotes = tab("Quotations");
         JList<?> saved = list(quotes, "Saved quotations");
         JList<?> items = list(quotes, "Quotation items");
-        JComboBox<?> clients = combo(quotes, "Client");
-        JComboBox<?> offerings = combo(quotes, "Offering");
+        JTextField clients = field(quotes, "Client");
+        JTextField offerings = field(quotes, "Offering");
         JComboBox<?> statuses = combo(quotes, "Status");
-        ModelTest.check(clients.getItemAt(1) == store.getClient(1) && offerings.getItemAt(1) == store.getOffering(1),
-                "quote choices come from the other two tabs");
         expectError(quotes, "Open", "Select a saved quotation");
         expectError(quotes, "Delete Quote", "Select a saved quotation");
         expectError(quotes, "Remove Item", "Select a quotation item");
         expectError(quotes, "Add Item", "Select an offering");
         expectError(quotes, "Save Quote", "Select a client");
-        clients.setSelectedIndex(1);
+        clients.setText("Missing");
+        label(suggestions(clients), "No matching names");
+        expectError(quotes, "Save Quote", "Select a client");
+        clients.setText(" rIv ");
+        ModelTest.check(matches(clients).getModel().getSize() == 2, "client search matches partial duplicate names");
+        choose(clients, " rIv ", store.getClient(1));
+        ModelTest.check(clients.getText().contains("studio@example.com"), "selection displays the exact client");
         click(quotes, "Calculate");
         label(quotes, "Subtotal: 0.00");
         expectError(quotes, "Save Quote", "Add at least one item");
 
-        offerings.setSelectedIndex(1);
+        offerings.setText("eSIG");
+        ModelTest.check(matches(offerings).getModel().getSize() == 2, "offering search matches partial duplicate names");
+        expectError(quotes, "Add Item", "Select an offering");
+        choose(offerings, "eSIG", store.getOffering(1));
+        ModelTest.check(offerings.getText().contains("Brand package"), "selection displays the exact offering");
         for (String invalid : new String[] {"abc", "0", "-1", "NaN", "Infinity", "1e308"}) {
             field(quotes, "Quantity / hours").setText(invalid);
             String message = invalid.equals("abc") ? "numerical quantity" : "finite number greater than zero";
@@ -218,8 +227,9 @@ public class SwingTest {
                 && quote.getItems().get(1).getDiscountPercent() == 12.5, "saved quote totals, status and item discount");
 
         click(quotes, "New Quote");
-        ModelTest.check(items.getModel().getSize() == 0 && clients.getSelectedIndex() == -1, "new quote clears editor");
-        clients.setSelectedIndex(0);
+        ModelTest.check(items.getModel().getSize() == 0 && clients.getText().isEmpty() && offerings.getText().isEmpty(),
+                "new quote clears editor");
+        choose(clients, "Alex", store.getClient(0));
         addItem(quotes, 0, "1.5");
         click(quotes, "Save Quote");
         search(quotes, "Search by client name", "missing");
@@ -229,7 +239,7 @@ public class SwingTest {
         ModelTest.check(saved.getModel().getSize() == 2, "saved quotes search returns both duplicate client names");
         saved.setSelectedIndex(0);
         click(quotes, "Open");
-        ModelTest.check(items.getModel().getSize() == 2 && clients.getSelectedItem() == quote.getClient(),
+        ModelTest.check(items.getModel().getSize() == 2 && clients.getText().contains(quote.getClient().getEmail()),
                 "open restores the selected quotation");
         ModelTest.check(date.getText().equals("2026-11-23") && statuses.getSelectedItem() == Quote.Status.SENT
                 && discount.getText().equals("10.0"), "open restores date, status and discount");
@@ -237,6 +247,9 @@ public class SwingTest {
         click(quotes, "Show All");
         capture("quotations.png");
 
+        clients.setText("Alex");
+        expectError(quotes, "Save Quote", "Select a client");
+        click(quotes, "Open");
         date.setText("2026-11-24");
         discount.setText("25");
         statuses.setSelectedItem(Quote.Status.ACCEPTED);
@@ -279,6 +292,8 @@ public class SwingTest {
         JList<?> saved = list(quotes, "Saved quotations");
         ModelTest.check(saved.getModel().getSize() == 1 && saved.getModel().getElementAt(0) == quote,
                 "quotation search sees updated client on tab return");
+        ModelTest.check(field(quotes, "Client").getText().contains("Alex Rivera Studio"),
+                "selected client label reflects cross-tab changes");
         addItem(quotes, 1, "1");
         label(quotes, "Subtotal: 400.00");
         ModelTest.check(quote.getItems().size() == 1, "new draft line uses new price without changing saved quote");
@@ -289,6 +304,7 @@ public class SwingTest {
         offeringList.setSelectedIndex(2);
         click(offerings, "Delete");
         tab("Quotations");
+        ModelTest.check(field(quotes, "Offering").getText().isEmpty(), "deleted offering is no longer selected");
         expectError(quotes, "Save Quote", "offering that was deleted");
         ModelTest.check(quote.getItems().size() == 1, "stale draft cannot replace saved quote");
         saved.setSelectedIndex(0);
@@ -332,10 +348,28 @@ public class SwingTest {
         field(panel, "Unit price").setText(price);
     }
 
-    private static void addItem(Component panel, int offeringIndex, String quantity) {
-        combo(panel, "Offering").setSelectedIndex(offeringIndex);
+    private void addItem(Component panel, int offeringIndex, String quantity) {
+        Offering offering = store.getOffering(offeringIndex);
+        choose(field(panel, "Offering"), offering.getName(), offering);
         field(panel, "Quantity / hours").setText(quantity);
         click(panel, "Add Item");
+    }
+
+    private static void choose(JTextField field, String query, Object record) {
+        field.setText(query);
+        JList<?> results = matches(field);
+        results.setSelectedValue(record, true);
+        ModelTest.check(results.getSelectedValue() == record, "search contains the intended record");
+        field.postActionEvent();
+    }
+
+    private static JList<?> matches(JTextField field) {
+        return find(suggestions(field), JList.class, Component::isShowing);
+    }
+
+    private static JPopupMenu suggestions(JTextField field) {
+        return find(SwingUtilities.getRootPane(field), JPopupMenu.class,
+                popup -> popup.isShowing() && popup.getInvoker() == field);
     }
 
     private static void search(Component panel, String label, String query) {

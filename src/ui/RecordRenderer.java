@@ -25,7 +25,7 @@ class RecordRenderer extends DefaultListCellRenderer {
         return super.getListCellRendererComponent(list, label(value), index, selected, hasFocus);
     }
 
-    private String label(Object value) {
+    String label(Object value) {
         if (value instanceof Client) {
             Client client = (Client) value;
             return "#" + dataStore.getClientNumber(client) + "  " + client.getName()

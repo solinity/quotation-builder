@@ -26,8 +26,8 @@ public class QuotesPanel extends JPanel {
     private static final long serialVersionUID = 1L;
 
     private final DataStore dataStore;
-    private final JComboBox<Client> clientChoices = new JComboBox<>();
-    private final JComboBox<Offering> offeringChoices = new JComboBox<>();
+    private final RecordSearchField<Client> clientSearch;
+    private final RecordSearchField<Offering> offeringSearch;
     private final JComboBox<Quote.Status> statusChoices = new JComboBox<>(Quote.Status.values());
     private final JTextField dateField = new JTextField(12);
     private final JTextField discountField = new JTextField(8);
@@ -53,8 +53,8 @@ public class QuotesPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
         RecordRenderer renderer = new RecordRenderer(dataStore);
-        clientChoices.setRenderer(renderer);
-        offeringChoices.setRenderer(renderer);
+        clientSearch = new RecordSearchField<>(dataStore::findClientsByName, renderer);
+        offeringSearch = new RecordSearchField<>(dataStore::findOfferingsByName, renderer);
         itemList.setCellRenderer(renderer);
         itemList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         itemList.getAccessibleContext().setAccessibleName("Quotation items");
@@ -105,13 +105,13 @@ public class QuotesPanel extends JPanel {
 
     private JPanel createEditorPanel() {
         FormPanel fields = new FormPanel();
-        fields.addField("Client", clientChoices);
+        fields.addField("Client", clientSearch);
         fields.addField("Date (YYYY-MM-DD)", dateField);
         fields.addField("Status", statusChoices);
         fields.addField("Discount (%)", discountField);
 
         FormPanel itemFields = new FormPanel();
-        itemFields.addField("Offering", offeringChoices);
+        itemFields.addField("Offering", offeringSearch);
         itemFields.addField("Quantity / hours", quantityField);
         itemFields.addField("Item discount (%)", itemDiscountField);
 
@@ -161,20 +161,14 @@ public class QuotesPanel extends JPanel {
     }
 
     void refreshFromStore() {
-        Client selectedClient = (Client) clientChoices.getSelectedItem();
-        Offering selectedOffering = (Offering) offeringChoices.getSelectedItem();
-
-        clientChoices.removeAllItems();
-        for (int i = 0; i < dataStore.getClientCount(); i++) {
-            clientChoices.addItem(dataStore.getClient(i));
+        Client selectedClient = clientSearch.getSelectedRecord();
+        if (selectedClient != null) {
+            clientSearch.setSelectedRecord(dataStore.hasClient(selectedClient) ? selectedClient : null);
         }
-        clientChoices.setSelectedItem(dataStore.hasClient(selectedClient) ? selectedClient : null);
-
-        offeringChoices.removeAllItems();
-        for (int i = 0; i < dataStore.getOfferingCount(); i++) {
-            offeringChoices.addItem(dataStore.getOffering(i));
+        Offering selectedOffering = offeringSearch.getSelectedRecord();
+        if (selectedOffering != null) {
+            offeringSearch.setSelectedRecord(dataStore.hasOffering(selectedOffering) ? selectedOffering : null);
         }
-        offeringChoices.setSelectedItem(dataStore.hasOffering(selectedOffering) ? selectedOffering : null);
 
         refreshQuoteList();
         refreshEditorMode();
@@ -183,9 +177,9 @@ public class QuotesPanel extends JPanel {
 
     private void addItem() {
         try {
-            Offering offering = (Offering) offeringChoices.getSelectedItem();
+            Offering offering = offeringSearch.getSelectedRecord();
             if (offering == null) {
-                throw new IllegalArgumentException("Select an offering. Add one in Offerings if needed.");
+                throw new IllegalArgumentException("Select an offering from the search results. Add one in Offerings if needed.");
             }
             double quantity = readNumber(quantityField, "quantity");
             double discount = itemDiscountField.getText().isBlank() ? 0 : readNumber(itemDiscountField, "item discount");
@@ -261,8 +255,8 @@ public class QuotesPanel extends JPanel {
         draft = new Quote(quote.getClient());
         draft.updateFrom(quote);
 
-        clientChoices.setSelectedItem(draft.getClient());
-        offeringChoices.setSelectedItem(null);
+        clientSearch.setSelectedRecord(draft.getClient());
+        offeringSearch.setSelectedRecord(null);
         dateField.setText(draft.getDate().toString());
         statusChoices.setSelectedItem(draft.getStatus());
         discountField.setText(Double.toString(draft.getDiscountPercent()));
@@ -280,8 +274,8 @@ public class QuotesPanel extends JPanel {
         editingQuote = null;
         draft = null;
         quoteList.clearSelection();
-        clientChoices.setSelectedItem(null);
-        offeringChoices.setSelectedItem(null);
+        clientSearch.setSelectedRecord(null);
+        offeringSearch.setSelectedRecord(null);
         dateField.setText(LocalDate.now().toString());
         statusChoices.setSelectedItem(Quote.Status.DRAFT);
         discountField.setText("0");
@@ -316,9 +310,9 @@ public class QuotesPanel extends JPanel {
     }
 
     private Client selectedClient() {
-        Client client = (Client) clientChoices.getSelectedItem();
+        Client client = clientSearch.getSelectedRecord();
         if (client == null) {
-            throw new IllegalArgumentException("Select a client. Add one in Clients if needed.");
+            throw new IllegalArgumentException("Select a client from the search results. Add one in Clients if needed.");
         }
         return client;
     }

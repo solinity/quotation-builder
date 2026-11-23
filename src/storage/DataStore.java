@@ -2,6 +2,8 @@ package storage;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.function.Function;
 import model.Client;
 import model.Offering;
 import model.Quote;
@@ -56,6 +58,10 @@ public class DataStore {
         return matches;
     }
 
+    public List<Client> findClientsByName(String name) {
+        return findByName(clients, Client::getName, name);
+    }
+
     public void addOffering(Offering offering) {
         if (offering == null || hasOffering(offering)) {
             throw new IllegalArgumentException("Provide a new offering record.");
@@ -98,6 +104,10 @@ public class DataStore {
             }
         }
         return matches;
+    }
+
+    public List<Offering> findOfferingsByName(String name) {
+        return findByName(offerings, Offering::getName, name);
     }
 
     public void addQuote(Quote quote) {
@@ -177,6 +187,17 @@ public class DataStore {
                     "An item uses an offering that was deleted. Remove that item before saving.");
             }
         }
+    }
+
+    private <T> List<T> findByName(List<T> records, Function<T, String> nameOf, String name) {
+        String keyword = name.strip().toLowerCase(Locale.ROOT);
+        List<T> matches = new ArrayList<>();
+        for (T record : records) {
+            if (nameOf.apply(record).toLowerCase(Locale.ROOT).contains(keyword)) {
+                matches.add(record);
+            }
+        }
+        return matches;
     }
 
     private int indexOfRecord(ArrayList<?> records, Object selected) {
