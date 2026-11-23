@@ -1,17 +1,14 @@
 package ui;
 
 import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import javax.swing.BorderFactory;
+import java.awt.Dimension;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
 import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
 import model.Client;
 import storage.DataStore;
 
@@ -20,12 +17,15 @@ public class ClientsPanel extends JPanel {
 
     private final DataStore dataStore;
 
-    private final JTextField txtName = new JTextField(32);
-    private final JTextField txtEmail = new JTextField(32);
-    private final JTextField txtPhone = new JTextField(32);
+    private final JTextField txtName = new JTextField(18);
+    private final JTextField txtEmail = new JTextField(18);
+    private final JTextField txtPhone = new JTextField(18);
     private final JTextField txtSearch = new JTextField(18);
     private final JLabel listStatus = new JLabel();
+    private final JLabel editorTitle = SwingStyle.heading("New client");
+    private final JLabel selectionStatus = SwingStyle.muted("Name is required.");
     private String activeSearch = "";
+    private boolean refreshingList;
 
     private final JButton btnAddClient = new JButton("Add Client");
     private final JButton btnSearch = new JButton("Search");
@@ -42,25 +42,32 @@ public class ClientsPanel extends JPanel {
         }
         this.dataStore = dataStore;
 
-        setLayout(new BorderLayout(10, 10));
-        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        SwingStyle.page(this);
+        SwingStyle.muted(listStatus);
 
-        clientList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         clientList.setCellRenderer(new RecordRenderer(dataStore));
-        clientList.getAccessibleContext().setAccessibleName("Registered clients");
         clientList.addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting()) {
+            if (!refreshingList && !event.getValueIsAdjusting()) {
                 populateClientForm();
             }
         });
 
-        JPanel editor = new JPanel(new BorderLayout(0, 5));
-        editor.setBorder(BorderFactory.createTitledBorder("Client details"));
-        editor.add(createFormPanel(), BorderLayout.WEST);
-        editor.add(createButtonPanel(), BorderLayout.SOUTH);
+        JPanel details = new JPanel(new BorderLayout(0, 10));
+        details.setOpaque(false);
+        details.add(selectionStatus, BorderLayout.NORTH);
+        details.add(createFormPanel(), BorderLayout.CENTER);
+        details.add(createButtonPanel(), BorderLayout.SOUTH);
+        JPanel editor = SwingStyle.card();
+        editor.add(editorTitle, BorderLayout.NORTH);
+        editor.add(details, BorderLayout.CENTER);
+        editor.setPreferredSize(new Dimension(400, editor.getPreferredSize().height));
+        JPanel editorColumn = new JPanel(new BorderLayout());
+        editorColumn.setOpaque(false);
+        editorColumn.add(editor, BorderLayout.NORTH);
 
-        add(editor, BorderLayout.NORTH);
+        add(editorColumn, BorderLayout.WEST);
         add(createListPanel(), BorderLayout.CENTER);
+        populateClientForm();
         refreshClientList();
     }
 
@@ -73,38 +80,33 @@ public class ClientsPanel extends JPanel {
     }
 
     private JPanel createButtonPanel() {
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
         JButton clear = new JButton("Clear Form");
+        SwingStyle.button(btnAddClient, true);
+        SwingStyle.button(btnUpdate, true);
+        SwingStyle.button(btnDelete, false);
+        SwingStyle.button(clear, false);
 
         btnAddClient.addActionListener(event -> addClient());
         btnUpdate.addActionListener(event -> updateClient());
         btnDelete.addActionListener(event -> deleteClient());
         clear.addActionListener(event -> clearClientForm());
 
-        buttonPanel.add(btnAddClient);
-        buttonPanel.add(btnUpdate);
-        buttonPanel.add(btnDelete);
-        buttonPanel.add(clear);
-
-        return buttonPanel;
+        return SwingStyle.row(btnAddClient, btnUpdate, btnDelete, clear);
     }
 
     private JPanel createListPanel() {
-        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
-        JLabel searchLabel = new JLabel("Search by name");
-        searchLabel.setLabelFor(txtSearch);
-        searchPanel.add(searchLabel);
-        searchPanel.add(txtSearch);
-        searchPanel.add(btnSearch);
-        searchPanel.add(btnShowAll);
+        JPanel searchPanel = SwingStyle.searchBar("Search by name", txtSearch, btnSearch, btnShowAll);
         btnSearch.addActionListener(event -> searchClients());
         txtSearch.addActionListener(event -> searchClients());
         btnShowAll.addActionListener(event -> showAllClients());
 
-        JPanel listPanel = new JPanel(new BorderLayout(0, 5));
-        listPanel.setBorder(BorderFactory.createTitledBorder("Registered clients"));
-        listPanel.add(searchPanel, BorderLayout.NORTH);
-        listPanel.add(new JScrollPane(clientList), BorderLayout.CENTER);
+        JPanel header = new JPanel(new BorderLayout(0, 8));
+        header.setOpaque(false);
+        header.add(SwingStyle.heading("Registered clients"), BorderLayout.NORTH);
+        header.add(searchPanel, BorderLayout.CENTER);
+        JPanel listPanel = SwingStyle.card();
+        listPanel.add(header, BorderLayout.NORTH);
+        listPanel.add(SwingStyle.list(clientList, "Registered clients", 55, 5), BorderLayout.CENTER);
         listPanel.add(listStatus, BorderLayout.SOUTH);
         return listPanel;
     }
@@ -114,17 +116,13 @@ public class ClientsPanel extends JPanel {
         String email = txtEmail.getText();
         String phone = txtPhone.getText();
 
-        Client client;
         try {
-            client = new Client(name, email, phone);
-        } catch (IllegalArgumentException error) {
-            JOptionPane.showMessageDialog(this, error.getMessage(), "Invalid Client", JOptionPane.ERROR_MESSAGE);
-            return;
+            dataStore.addClient(new Client(name, email, phone));
+            showAllClients();
+            clearClientForm();
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), "Add Client", JOptionPane.ERROR_MESSAGE);
         }
-
-        dataStore.addClient(client);
-        showAllClients();
-        clearClientForm();
     }
 
     private void searchClients() {
@@ -139,10 +137,21 @@ public class ClientsPanel extends JPanel {
 
     private void populateClientForm() {
         Client selectedClient = clientList.getSelectedValue();
+        boolean selected = selectedClient != null;
+        btnAddClient.setEnabled(!selected);
+        btnUpdate.setEnabled(selected);
+        btnDelete.setEnabled(selected);
+        editorTitle.setText(selected ? "Edit client" : "New client");
+        selectionStatus.setText(selected ? "Client #" + dataStore.getClientNumber(selectedClient) + " selected"
+                : "Name is required.");
         if (selectedClient != null) {
             txtName.setText(selectedClient.getName());
             txtEmail.setText(selectedClient.getEmail());
             txtPhone.setText(selectedClient.getPhone());
+        } else {
+            txtName.setText("");
+            txtEmail.setText("");
+            txtPhone.setText("");
         }
     }
 
@@ -157,19 +166,14 @@ public class ClientsPanel extends JPanel {
         String email = txtEmail.getText();
         String phone = txtPhone.getText();
 
-        Client validatedClient;
         try {
-            validatedClient = new Client(name, email, phone);
-        } catch (IllegalArgumentException error) {
-            JOptionPane.showMessageDialog(this, error.getMessage(), "Invalid Client", JOptionPane.ERROR_MESSAGE);
-            return;
+            dataStore.updateClient(selectedClient, new Client(name, email, phone));
+            showAllClients();
+            clientList.setSelectedValue(selectedClient, true);
+            populateClientForm();
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), "Update Client", JOptionPane.ERROR_MESSAGE);
         }
-
-        selectedClient.setName(validatedClient.getName());
-        selectedClient.setEmail(validatedClient.getEmail());
-        selectedClient.setPhone(validatedClient.getPhone());
-        showAllClients();
-        clientList.setSelectedValue(selectedClient, true);
     }
 
     private void deleteClient() {
@@ -180,10 +184,17 @@ public class ClientsPanel extends JPanel {
         }
 
         try {
+            if (dataStore.isClientReferenced(selectedClient)) {
+                throw new IllegalArgumentException("This client is used by a saved quotation.");
+            }
+            if (JOptionPane.showConfirmDialog(this, "Delete " + selectedClient.getName() + "?",
+                    "Delete client", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                return;
+            }
             if (!dataStore.removeClient(selectedClient)) {
                 throw new IllegalArgumentException("The selected client could not be found.");
             }
-        } catch (IllegalArgumentException error) {
+        } catch (IllegalArgumentException | IllegalStateException error) {
             JOptionPane.showMessageDialog(this, error.getMessage(), "Delete Client", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -194,18 +205,26 @@ public class ClientsPanel extends JPanel {
 
     private void clearClientForm() {
         clientList.clearSelection();
-        txtName.setText("");
-        txtEmail.setText("");
-        txtPhone.setText("");
+        populateClientForm();
     }
 
     void refreshClientList() {
         Client selected = clientList.getSelectedValue();
-        clientListModel.clear();
-        for (Client client : dataStore.searchClients(activeSearch)) {
-            clientListModel.addElement(client);
+        refreshingList = true;
+        try {
+            clientListModel.clear();
+            for (Client client : dataStore.searchClients(activeSearch)) {
+                clientListModel.addElement(client);
+            }
+            clientList.setSelectedValue(selected, true);
+        } finally {
+            refreshingList = false;
         }
-        clientList.setSelectedValue(selected, true);
-        listStatus.setText(clientListModel.isEmpty() ? "No clients found." : clientListModel.size() + " shown");
+        if (clientList.getSelectedValue() != selected) {
+            populateClientForm();
+        }
+        listStatus.setText(clientListModel.isEmpty()
+                ? (activeSearch.isEmpty() ? "No clients yet. Add your first client using the form." : "No clients match your search.")
+                : clientListModel.size() + (clientListModel.size() == 1 ? " client shown" : " clients shown"));
     }
 }

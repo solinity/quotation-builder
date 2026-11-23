@@ -1,7 +1,8 @@
 package ui;
 
-import java.awt.BorderLayout;
-import java.awt.GridLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -9,19 +10,32 @@ import javax.swing.JPanel;
 class FormPanel extends JPanel {
     private static final long serialVersionUID = 1L;
 
-    private final JPanel labels = new JPanel(new GridLayout(0, 1, 0, 6));
-    private final JPanel inputs = new JPanel(new GridLayout(0, 1, 0, 6));
+    private int row;
 
     FormPanel() {
-        super(new BorderLayout(16, 0));
-        add(labels, BorderLayout.WEST);
-        add(inputs, BorderLayout.CENTER);
+        super(new GridBagLayout());
+        setOpaque(false);
     }
 
     void addField(String text, JComponent input) {
-        JLabel label = new JLabel(text);
-        label.setLabelFor(input);
-        labels.add(label);
-        inputs.add(input);
+        addField(text, input, input);
+    }
+
+    void addField(String text, JComponent input, JComponent labeledInput) {
+        JLabel label = SwingStyle.muted(text);
+        label.setLabelFor(labeledInput);
+        SwingStyle.field(input);
+
+        GridBagConstraints position = new GridBagConstraints();
+        position.gridy = row++;
+        position.anchor = GridBagConstraints.LINE_START;
+        position.insets = new Insets(3, 0, 3, 12);
+        add(label, position);
+
+        position.gridx = 1;
+        position.insets = new Insets(3, 0, 3, 0);
+        position.weightx = 1;
+        position.fill = GridBagConstraints.HORIZONTAL;
+        add(input, position);
     }
 }

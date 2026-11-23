@@ -2,37 +2,42 @@
 
 ## Explain the project in one minute
 
-Freelancers need to prepare consistent estimates and look up earlier quotes. Our application keeps client contacts, service prices, and quotations in one Swing window. A quotation is linked to a client and has one or more service lines. Each line remembers its agreed price, so a later catalog update leaves previous totals intact.
+Freelancers need to prepare consistent estimates and find them again later. Our application keeps client contacts, service prices, and quotations in one Swing window. Each quote has a permanent number and one or more service lines. The freelancer can preview the quotation, export it for a client, and find it again after restarting the app. Each line remembers its agreed price, so later catalog updates leave its total intact.
 
 ```text
 Main → MainFrame → ClientsPanel / OfferingsPanel / QuotesPanel
                      All three use the same DataStore
 
 DataStore → clients, offerings, quotations
+DataStore → DataFile → data/quotations.txt
 Quote     → one Client and a list of QuoteItems
 QuoteItem → one Offering, a quantity, and an agreed unit price
+QuotesPanel → QuotePreview → optional text export
 ```
 
 ## Demonstration sequence
 
-1. In **Clients**, add two clients named **Alex Rivera** with different emails. Search for `alex rivera` and show that both are returned. Select one and update its phone.
-2. In **Offerings**, add **Design** at 75, another **Design** at 120, and **Consultation** at 30. Give the two Design offerings different descriptions. Search for `design`, then click **Show All**.
-3. In **Quotations**, select the intended Alex Rivera by email. Add two units of the Design offering priced at 120 and two units of Consultation. Demonstrate **Remove Item** by adding and removing an extra line. Enter a 10% discount and click **Calculate**. The subtotal should be **300.00**, and the total should be **270.00**.
-4. Set the status to **SENT** and save. Start a new quote, search for the saved one by client name, and click **Open**. Change the status to **ACCEPTED** and save again.
-5. Change the 120 Design offering to 160 in **Offerings**. Return to the existing quote and point out that its line still shows 120.00. Attempt to delete the referenced offering and the referenced client to show the protective messages.
-6. Show an error using a quantity of zero or a discount above 100. Finish by deleting the quote. The former references are now available for deletion if no other saved quote uses them.
+1. In **Clients**, add two clients named **Alex Rivera** with different emails. Search for `river` to show both results. Select one and update its phone.
+2. In **Offerings**, add **Design** at 75, another **Design** at 120, and **Consultation** at 30. Give the two Design offerings different descriptions. Search for `sign`, then click **Show All**.
+3. In **Quotations**, select the intended Alex Rivera by email. Enter a sample name in **Prepared by**. Add two units of the Design offering priced at 120 and two units of Consultation. Add and remove an extra line to demonstrate **Remove Item**. Enter a 10% discount and click **Calculate**. Point out the **300.00** subtotal, **−30.00** discount, and **270.00** total.
+4. Set the status to **SENT** and select **Save Quote**. Note the assigned number. Open **Preview Quote** to show the document, including the sender, client, and line prices. Export it as text and open the exported file.
+5. Start a new quote, search for the saved one by its number, and click **Open**. Change the status to **ACCEPTED**. Click **New Quote** and decline the prompt to show that unsaved edits are retained. Save the status change.
+6. Change the 120 Design offering to 160 in **Offerings**. Return to the quote and show its agreed price of 120.00. Attempt to delete the referenced offering and client to show the protective messages.
+7. Close and reopen the application from the same folder. Open the same quote by its number and verify its status and prices. Show an error using a quantity of zero or a discount above 100.
 
 ## Walk through the code
 
-**Start and navigation.** `Main.main()` creates one `DataStore` and one `MainFrame` through `SwingUtilities.invokeLater()`, as in the registration lab. The frame passes the same store to the three panel constructors. Selecting Quotations refreshes its client and offering choices from that store.
+**Start and navigation.** `Main.main()` opens the local store and creates a `MainFrame` through `SwingUtilities.invokeLater()`. The frame passes the store to the three panel constructors. Selecting Quotations refreshes its choices from that store. `SwingStyle` shares the visual rules, and the layout managers position and resize the controls.
 
 **Add, display, and search.** A button listener reads the form and calls a constructor or model method. For a client or offering, the panel adds the object to the store and rebuilds its list. For a search, the store loops over its list and returns a separate list of matches. Searching leaves the stored records intact.
 
-**Update and delete.** Selecting a client or offering fills the form. Update first constructs a validated replacement from all the fields. The panel then copies those values through the original object's setters. Delete checks saved quotes for references to the selected object. A quote checks its client directly and its offerings through its items.
+**Update and delete.** Selecting a client or offering fills the form. Update constructs a validated replacement and passes it to `DataStore`. The store copies those values into the selected object so existing quotations keep their references. Delete asks for confirmation. The store checks each saved quote's client and the offerings used in its items.
 
-**Create, open, and save quotations.** The editor holds a draft with its own item list. Opening an existing quote copies its data into the draft. Save checks the date, client, status, discount, and item references. It then adds the new quote or updates the opened quote. The saved quote is unaffected by rejected or unsaved edits.
+**Create, open, and save quotations.** The editor holds a draft with its own item list. Opening a saved quote copies its details into the draft. Button and field listeners update the editor status. Save checks the date, client, status, discount, and references. `DataStore` gives a new quote the next number and preserves that number on subsequent edits.
 
-**Calculation.** `QuoteItem.getLineTotal()` multiplies quantity by the item's stored unit price. `Quote.getSubtotal()` loops over the lines and adds their totals. `Quote.getTotal()` applies the discount as a fraction of 100. A discount of zero keeps the subtotal and a discount of 100 makes the total zero.
+**Calculation and preview.** `QuoteItem.getLineTotal()` multiplies quantity by the item's stored unit price. `Quote.getSubtotal()` loops over the lines and adds their totals. `Quote.getDiscountAmount()` gives the deduction and `Quote.getTotal()` gives the final amount. The editor and `QuotePreview` call these same methods. The preview puts the formatted document into a read-only text area and writes that text to the file selected by the user.
+
+**File I/O.** `DataFile` uses a `BufferedWriter` for saving and a `BufferedReader` for loading. It writes a new file beside the current one and replaces the current file after the write finishes. When reading, it creates clients and offerings before attaching them to quotations. The separate next-number field gives a new quotation a fresh number after deletion or restart.
 
 **Object-oriented programming.** Private fields and validated methods demonstrate encapsulation. Constructors initialize usable objects. A quotation has a client and a list of items. Each item knows its offering. Inheritance is visible where the frame extends `JFrame` and each tab panel extends `JPanel`.
 
@@ -47,5 +52,7 @@ QuoteItem → one Offering, a quantity, and an agreed unit price
 | Why use ArrayList? | The number of records can grow or shrink at runtime. We add and remove objects and use loops for searching, checking references, and summing items. |
 | Can a quotation be saved with zero items or a free item? | An empty draft displays zero and cannot be saved. A real item can have a zero unit price if its quantity is greater than zero. |
 | What if an item total overflows? | The item constructor checks that the multiplication is finite. `Quote.addItem()` also checks the proposed subtotal before adding the line. |
-| Why use one DataStore? | The same object is passed into all three tabs, so a client created in one tab becomes a choice in another. Its collections last for the current session. |
-| How did you test your app? | `ModelTest` checks formulas, bounds, and stored relationships. `SwingTest` opens the window and exercises the real buttons, selections, dialogs, and tab changes with sample inputs. |
+| Why use one DataStore? | The same object is passed into all three tabs, so a client created in one tab becomes a choice in another. It also saves changes through one path. |
+| What if the data file is damaged? | The app opens a labeled temporary session and leaves the file available for recovery. |
+| How do you handle currency? | The freelancer uses one currency throughout. The display shows numeric amounts, so the same catalog prices stay meaningful across quotations. |
+| How did you test your app? | `ModelTest` checks formulas, bounds, stored relationships, restart, and write failures. `SwingTest` uses real controls to check the workflow, preview, export, and resizing. |

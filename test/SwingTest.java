@@ -1,7 +1,10 @@
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.Window;
+import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,13 +16,16 @@ import javax.imageio.ImageIO;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
-import javax.swing.JTextField;
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.text.JTextComponent;
 import model.Client;
 import model.Offering;
 import model.Quote;
@@ -27,6 +33,7 @@ import storage.DataStore;
 import ui.MainFrame;
 
 public class SwingTest {
+    private static final String QUOTE_SEARCH = "Search by client or quote number";
     private final DataStore store = new DataStore();
     private final MainFrame frame = new MainFrame(store);
     private final JTabbedPane tabs = find(frame, JTabbedPane.class, tabPane -> true);
@@ -61,8 +68,8 @@ public class SwingTest {
     private void testClientActions() {
         Component clients = tab("Clients");
         JList<?> list = list(clients, "Registered clients");
-        expectError(clients, "Update", "Select a client to update");
-        expectError(clients, "Delete", "Select a client to delete");
+        expectDisabled(clients, "Update");
+        expectDisabled(clients, "Delete");
         expectError(clients, "Add Client", "Name can't be empty");
 
         addClient(clients, "Alex Rivera", "north@example.com", "555-0101");
@@ -71,7 +78,7 @@ public class SwingTest {
         ModelTest.check(list.getModel().getSize() == 3 && field(clients, "Name").getText().isEmpty(),
                 "clients displayed and successful add clears form");
 
-        field(clients, "Search by name").setText(" aLeX rIvErA ");
+        field(clients, "Search by name").setText(" rIvEr ");
         click(clients, "Search");
         ModelTest.check(list.getModel().getSize() == 2 && list.getModel().getElementAt(1) == store.getClient(1),
                 "client search retains both matching objects");
@@ -91,11 +98,15 @@ public class SwingTest {
         click(clients, "Clear Form");
         ModelTest.check(list.isSelectionEmpty() && field(clients, "Name").getText().isEmpty(), "clear client form");
 
+        field(clients, "Name").setText("New name");
         search(clients, "Search by name", "Nobody");
         ModelTest.check(list.getModel().getSize() == 0, "client no-match search");
+        ModelTest.check(field(clients, "Name").getText().equals("New name"), "search preserves the new client form");
         click(clients, "Show All");
         list.setSelectedIndex(2);
-        click(clients, "Delete");
+        respondToDialog(clients, "Delete", JOptionPane.NO_OPTION, "Delete Sam Ortiz?");
+        ModelTest.check(list.getModel().getSize() == 3, "cancel client deletion");
+        respondToDialog(clients, "Delete", JOptionPane.YES_OPTION, "Delete Sam Ortiz?");
         ModelTest.check(list.getModel().getSize() == 2 && store.getClient(1) == client, "delete selected client");
         list.setSelectedIndex(1);
         capture("clients.png");
@@ -105,8 +116,8 @@ public class SwingTest {
     private void testOfferingActions() {
         Component offerings = tab("Offerings");
         JList<?> list = list(offerings, "Registered offerings");
-        expectError(offerings, "Update", "Select an offering to update");
-        expectError(offerings, "Delete", "Select an offering to delete");
+        expectDisabled(offerings, "Update");
+        expectDisabled(offerings, "Delete");
         for (String invalid : new String[] {"abc", "-1", "NaN", "Infinity", "-Infinity"}) {
             fillOffering(offerings, "Design", "Example", invalid);
             expectError(offerings, "Add Offering", invalid.equals("abc") ? "numerical unit price" : "finite number");
@@ -120,7 +131,7 @@ public class SwingTest {
         addOffering(offerings, "Consultation", "Project review", "30");
         addOffering(offerings, "Free discovery", "", "0");
         ModelTest.check(list.getModel().getSize() == 4, "offerings displayed after add");
-        search(offerings, "Search by name", " design ");
+        search(offerings, "Search by name", " sign ");
         ModelTest.check(list.getModel().getSize() == 2, "offering search returns duplicate matches");
         list.setSelectedIndex(1);
         ModelTest.check(field(offerings, "Description (optional)").getText().equals("Brand package"),
@@ -139,7 +150,7 @@ public class SwingTest {
         ModelTest.check(list.getModel().getSize() == 0, "offering no-match search");
         click(offerings, "Show All");
         list.setSelectedIndex(3);
-        click(offerings, "Delete");
+        respondToDialog(offerings, "Delete", JOptionPane.YES_OPTION, "Delete Free discovery?");
         ModelTest.check(store.getOfferingCount() == 3 && store.getOffering(1) == offering, "delete selected offering");
         list.setSelectedIndex(1);
         capture("offerings.png");
@@ -155,15 +166,16 @@ public class SwingTest {
         JComboBox<?> statuses = combo(quotes, "Status");
         ModelTest.check(clients.getItemAt(1) == store.getClient(1) && offerings.getItemAt(1) == store.getOffering(1),
                 "quote choices come from the other two tabs");
-        expectError(quotes, "Open", "Select a saved quotation");
-        expectError(quotes, "Delete Quote", "Select a saved quotation");
-        expectError(quotes, "Remove Item", "Select a quotation item");
+        expectDisabled(quotes, "Open");
+        expectDisabled(quotes, "Delete Quote");
+        expectDisabled(quotes, "Remove Item");
         expectError(quotes, "Add Item", "Select an offering");
         expectError(quotes, "Save Quote", "Select a client");
         clients.setSelectedIndex(1);
         click(quotes, "Calculate");
-        label(quotes, "Subtotal: 0.00");
+        amount(quotes, "Subtotal", "0.00");
         expectError(quotes, "Save Quote", "Add at least one item");
+        expectError(quotes, "Preview Quote", "Add at least one item");
 
         offerings.setSelectedIndex(1);
         for (String invalid : new String[] {"abc", "0", "-1", "NaN", "Infinity", "1e308"}) {
@@ -178,28 +190,35 @@ public class SwingTest {
         ModelTest.check(items.getModel().getSize() == 3, "add three items");
         items.setSelectedIndex(2);
         click(quotes, "Remove Item");
-        label(quotes, "Subtotal: 300.00");
+        amount(quotes, "Subtotal", "300.00");
 
-        JTextField discount = field(quotes, "Discount (%)");
+        JTextComponent discount = field(quotes, "Discount (%)");
         for (String invalid : new String[] {"abc", "-1", "101", "NaN", "Infinity"}) {
             discount.setText(invalid);
             expectError(quotes, "Calculate", invalid.equals("abc") ? "numerical discount" : "between 0 and 100");
         }
-        label(quotes, "Total: 300.00 (0.0% discount)");
+        amount(quotes, "Total", "300.00");
         discount.setText("100");
         click(quotes, "Calculate");
-        label(quotes, "Total: 0.00 (100.0% discount)");
+        amount(quotes, "Total", "0.00");
         discount.setText("10");
         click(quotes, "Calculate");
-        label(quotes, "Total: 270.00 (10.0% discount)");
+        amount(quotes, "Total", "270.00");
+        amount(quotes, "Discount amount", "-30.00");
 
-        JTextField date = field(quotes, "Date (YYYY-MM-DD)");
+        String draftPreview = readPreview(quotes, null);
+        ModelTest.check(draftPreview.contains("Pending save") && draftPreview.contains("studio@example.com")
+                && !draftPreview.contains("\nFROM\n") && store.getQuoteCount() == 0,
+                "new preview uses the selected client without invented sender details or saving");
+
+        JTextComponent date = field(quotes, "Date (YYYY-MM-DD)");
         date.setText("2026-02-30");
         expectError(quotes, "Save Quote", "Enter a valid date");
         date.setText("2026-11-23");
         statuses.setSelectedItem(null);
         expectError(quotes, "Save Quote", "Status can't be empty");
         statuses.setSelectedItem(Quote.Status.SENT);
+        field(quotes, "Prepared by (optional)").setText("Rivera Design Studio");
         click(quotes, "Save Quote");
         Quote quote = store.getQuote(0);
         ModelTest.check(quote.getClient() == store.getClient(1) && quote.getItems().get(0).getOffering() == store.getOffering(1),
@@ -211,19 +230,36 @@ public class SwingTest {
         clients.setSelectedIndex(0);
         addItem(quotes, 0, "1.5");
         click(quotes, "Save Quote");
-        search(quotes, "Search by client name", "missing");
+        search(quotes, QUOTE_SEARCH, "missing");
         ModelTest.check(saved.getModel().getSize() == 0, "saved quotes no-match search");
         click(quotes, "Show All");
-        search(quotes, "Search by client name", " ALEX RIVERA ");
+        search(quotes, QUOTE_SEARCH, " RIVERA ");
         ModelTest.check(saved.getModel().getSize() == 2, "saved quotes search returns both duplicate client names");
+        search(quotes, QUOTE_SEARCH, "q-0001");
+        ModelTest.check(saved.getModel().getSize() == 1 && saved.getModel().getElementAt(0) == quote,
+                "search finds a stable quotation number");
+        date.setText("2026-11-25");
+        label(quotes, "Unsaved changes");
         saved.setSelectedIndex(0);
-        click(quotes, "Open");
+        respondToDialog(quotes, "Open", JOptionPane.NO_OPTION, "Discard the unsaved changes");
+        ModelTest.check(date.getText().equals("2026-11-25"), "cancel open preserves changes");
+        saved.setSelectedIndex(0);
+        respondToDialog(quotes, "Open", JOptionPane.YES_OPTION, "Discard the unsaved changes");
         ModelTest.check(items.getModel().getSize() == 2 && clients.getSelectedItem() == quote.getClient(),
                 "open restores the selected quotation");
         ModelTest.check(date.getText().equals("2026-11-23") && statuses.getSelectedItem() == Quote.Status.SENT
                 && discount.getText().equals("10.0"), "open restores date, status and discount");
+        label(quotes, "All changes saved");
         click(quotes, "Show All");
         capture("quotations.png");
+        checkCompactQuoteLayout(quotes);
+        String preview = readPreview(quotes, "preview.png");
+        ModelTest.check(preview.contains("Q-0001") && preview.contains("2026-11-23") && preview.contains("SENT")
+                && preview.contains("Rivera Design Studio") && preview.contains("555-0199")
+                && preview.contains("Design") && preview.contains("Consultation")
+                && preview.contains("120.00") && preview.contains("240.00")
+                && preview.contains("300.00") && preview.contains("-30.00") && preview.contains("270.00"),
+                "preview displays the actual quote details, item prices, and totals");
 
         date.setText("2026-11-24");
         discount.setText("25");
@@ -237,9 +273,34 @@ public class SwingTest {
                 && quote.getStatus() == Quote.Status.ACCEPTED && quote.getDate().equals(LocalDate.of(2026, 11, 24)),
                 "save updates the same quotation");
         saved.setSelectedIndex(1);
-        click(quotes, "Delete Quote");
+        respondToDialog(quotes, "Delete Quote", JOptionPane.YES_OPTION, "Delete Q-0002?");
         ModelTest.check(store.getQuoteCount() == 1 && store.getQuote(0) == quote, "delete selected saved quote");
         System.out.println("PASS Swing quotation buttons, totals, reopen, update, and invalid input");
+    }
+
+    private void checkCompactQuoteLayout(Component quotes) {
+        Dimension original = frame.getSize();
+        frame.setSize(frame.getMinimumSize());
+        frame.validate();
+        try {
+            JScrollPane editor = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, combo(quotes, "Status"));
+            ModelTest.check(editor != null && editor.getVerticalScrollBar().isVisible(),
+                    "small windows can scroll through the quote editor");
+            editor.getVerticalScrollBar().setValue(editor.getVerticalScrollBar().getMaximum());
+            JLabel total = find(quotes, JLabel.class, label -> "Total".equals(label.getName()));
+            Rectangle visible = editor.getViewport().getViewRect();
+            Rectangle totalBounds = SwingUtilities.convertRectangle(total.getParent(), total.getBounds(),
+                    editor.getViewport().getView());
+            ModelTest.check(visible.contains(totalBounds),
+                    "scrolling reveals the full quote total in " + visible + ", total " + totalBounds);
+            JButton save = button(quotes, "Save Quote");
+            Rectangle saveBounds = SwingUtilities.convertRectangle(save.getParent(), save.getBounds(), quotes);
+            ModelTest.check(quotes.contains(saveBounds.x + saveBounds.width - 1, saveBounds.y + saveBounds.height - 1),
+                    "save button stays inside the editor at the minimum window size");
+        } finally {
+            frame.setSize(original);
+            frame.validate();
+        }
     }
 
     private void testRelationshipChanges() {
@@ -263,33 +324,39 @@ public class SwingTest {
                 "stored item keeps its original price after offering update");
 
         Component quotes = tab("Quotations");
-        search(quotes, "Search by client name", "Alex Rivera Studio");
+        search(quotes, QUOTE_SEARCH, "Alex Rivera Studio");
         JList<?> saved = list(quotes, "Saved quotations");
         ModelTest.check(saved.getModel().getSize() == 1 && saved.getModel().getElementAt(0) == quote,
                 "quotation search sees updated client on tab return");
         addItem(quotes, 1, "1");
-        label(quotes, "Subtotal: 400.00");
+        amount(quotes, "Subtotal", "400.00");
+        amount(quotes, "Total", "300.00");
+        respondToDialog(quotes, "New Quote", JOptionPane.NO_OPTION, "Discard the unsaved changes");
+        amount(quotes, "Subtotal", "400.00");
+        respondToDialog(() -> frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING)),
+                JOptionPane.NO_OPTION, "Discard the unsaved changes");
+        ModelTest.check(frame.isShowing(), "cancel window close keeps the draft open");
         ModelTest.check(quote.getItems().size() == 1, "new draft line uses new price without changing saved quote");
 
         // A draft alone does not prevent another tab from deleting its offering.
         addItem(quotes, 2, "1");
         tab("Offerings");
         offeringList.setSelectedIndex(2);
-        click(offerings, "Delete");
+        respondToDialog(offerings, "Delete", JOptionPane.YES_OPTION, "Delete Consultation?");
         tab("Quotations");
         expectError(quotes, "Save Quote", "offering that was deleted");
         ModelTest.check(quote.getItems().size() == 1, "stale draft cannot replace saved quote");
         saved.setSelectedIndex(0);
-        click(quotes, "Open");
-        label(quotes, "Subtotal: 240.00");
-        click(quotes, "Delete Quote");
+        respondToDialog(quotes, "Open", JOptionPane.YES_OPTION, "Discard the unsaved changes");
+        amount(quotes, "Subtotal", "240.00");
+        respondToDialog(quotes, "Delete Quote", JOptionPane.YES_OPTION, "Delete Q-0001?");
         ModelTest.check(store.getQuoteCount() == 0, "delete opened quotation");
         tab("Offerings");
         offeringList.setSelectedIndex(1);
-        click(offerings, "Delete");
+        respondToDialog(offerings, "Delete", JOptionPane.YES_OPTION, "Delete Design?");
         tab("Clients");
         clientList.setSelectedIndex(1);
-        click(clients, "Delete");
+        respondToDialog(clients, "Delete", JOptionPane.YES_OPTION, "Delete Alex Rivera Studio?");
         ModelTest.check(store.getOfferingCount() == 1 && store.getClientCount() == 1,
                 "deleting quotation releases client and offering");
         System.out.println("PASS cross-tab refresh, shared identities, price history and reference protection");
@@ -332,10 +399,26 @@ public class SwingTest {
     }
 
     private static void click(Component panel, String button) {
-        find(panel, JButton.class, found -> button.equals(found.getText())).doClick(0);
+        button(panel, button).doClick(0);
+    }
+
+    private static JButton button(Component panel, String text) {
+        return find(panel, JButton.class, found -> text.equals(found.getText()));
+    }
+
+    private static void expectDisabled(Component panel, String text) {
+        ModelTest.check(!button(panel, text).isEnabled(), text + " should be disabled");
     }
 
     private static void expectError(Component panel, String button, String expectedMessage) {
+        respondToDialog(panel, button, JOptionPane.OK_OPTION, expectedMessage);
+    }
+
+    private static void respondToDialog(Component panel, String button, int response, String expectedMessage) {
+        respondToDialog(() -> click(panel, button), response, expectedMessage);
+    }
+
+    private static void respondToDialog(Runnable action, int response, String expectedMessage) {
         String[] message = {null};
         Timer closeDialog = new Timer(50, event -> {
             for (Window window : Window.getWindows()) {
@@ -343,23 +426,91 @@ public class SwingTest {
                     JOptionPane dialog = search(window, JOptionPane.class, pane -> true);
                     if (dialog != null) {
                         message[0] = String.valueOf(dialog.getMessage());
-                        dialog.setValue(JOptionPane.OK_OPTION);
+                        dialog.setValue(response);
                     }
                 }
             }
         });
         closeDialog.start();
         try {
-            click(panel, button);
+            action.run();
         } finally {
             closeDialog.stop();
         }
         ModelTest.check(message[0] != null && message[0].contains(expectedMessage),
-                button + " should show " + expectedMessage + ", got " + message[0]);
+                "Dialog should show " + expectedMessage + ", got " + message[0]);
     }
 
-    private static JTextField field(Component panel, String name) {
-        return (JTextField) label(panel, name).getLabelFor();
+    private String readPreview(Component panel, String screenshot) {
+        String[] text = {null};
+        AssertionError[] failure = {null};
+        Timer readDialog = new Timer(40, event -> {
+            for (Window window : Window.getWindows()) {
+                if (window instanceof JDialog && window.isShowing()) {
+                    try {
+                        ModelTest.check("Quotation Preview".equals(((JDialog) window).getTitle()),
+                                "Preview Quote opens the preview dialog");
+                        text[0] = find(window, JTextArea.class, area -> !area.isEditable()).getText();
+                        if (screenshot != null) {
+                            capture(((JDialog) window).getContentPane(), screenshot);
+                            verifyTextExport(window, text[0]);
+                        }
+                    } catch (AssertionError error) {
+                        failure[0] = error;
+                    } finally {
+                        window.dispose();
+                    }
+                }
+            }
+        });
+        readDialog.start();
+        try {
+            click(panel, "Preview Quote");
+        } finally {
+            readDialog.stop();
+        }
+        if (failure[0] != null) {
+            throw failure[0];
+        }
+        ModelTest.check(text[0] != null, "preview dialog with read-only text");
+        return text[0];
+    }
+
+    private void verifyTextExport(Window preview, String displayedText) {
+        try {
+            Path folder = Files.createTempDirectory("quotation-export-test-");
+            Path destination = folder.resolve("client-copy");
+            Path exported = folder.resolve("client-copy.txt");
+            Timer chooseFile = new Timer(40, event -> {
+                for (Window window : Window.getWindows()) {
+                    if (window instanceof JDialog && window.isShowing() && window.getOwner() == preview) {
+                        JFileChooser chooser = search(window, JFileChooser.class, found -> true);
+                        if (chooser != null) {
+                            chooser.setSelectedFile(destination.toFile());
+                            chooser.approveSelection();
+                        } else {
+                            window.dispose();
+                        }
+                    }
+                }
+            });
+            chooseFile.start();
+            try {
+                click(preview, "Export as Text");
+                ModelTest.check(Files.exists(exported) && Files.readString(exported).equals(displayedText),
+                        "export adds .txt and writes the exact displayed preview");
+            } finally {
+                chooseFile.stop();
+                Files.deleteIfExists(exported);
+                Files.deleteIfExists(folder);
+            }
+        } catch (IOException error) {
+            throw new AssertionError("Could not verify the text export", error);
+        }
+    }
+
+    private static JTextComponent field(Component panel, String name) {
+        return (JTextComponent) label(panel, name).getLabelFor();
     }
 
     private static JComboBox<?> combo(Component panel, String name) {
@@ -370,6 +521,11 @@ public class SwingTest {
         JLabel label = search(panel, JLabel.class, found -> text.equals(found.getText()));
         ModelTest.check(label != null, "visible label " + text);
         return label;
+    }
+
+    private static void amount(Component panel, String name, String value) {
+        JLabel label = find(panel, JLabel.class, found -> name.equals(found.getName()));
+        ModelTest.check(value.equals(label.getText()), name + " shows " + value + ", got " + label.getText());
     }
 
     private static JList<?> list(Component panel, String name) {
@@ -398,11 +554,14 @@ public class SwingTest {
     }
 
     private void capture(String filename) {
+        frame.validate();
+        capture(frame.getContentPane(), filename);
+    }
+
+    private void capture(Container content, String filename) {
         if (screenshots == null) {
             return;
         }
-        frame.validate();
-        Container content = frame.getContentPane();
         BufferedImage image = new BufferedImage(content.getWidth(), content.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
         try {

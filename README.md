@@ -1,6 +1,6 @@
 # Freelance Quotation Builder
 
-A Java Swing desktop application for freelancers who need to manage client contacts, maintain a service catalog, and prepare cost estimates with quantities, discounts, and quotation statuses.
+A Java Swing desktop application for managing client contacts, maintaining a service catalog, and preparing quotations that can be previewed and shared as text.
 
 ## Compile and run on Windows
 
@@ -8,7 +8,7 @@ Use **JDK 11 or newer** with `java` and `javac` on your PATH. Run these commands
 
 ```powershell
 New-Item -ItemType Directory -Force out | Out-Null
-javac --release 11 -d out Main.java src/model/*.java src/storage/*.java src/ui/*.java
+javac --release 11 -encoding UTF-8 -d out Main.java src/model/*.java src/storage/*.java src/ui/*.java
 java -cp out Main
 ```
 
@@ -16,12 +16,19 @@ Compiled classes go into the ignored `out` directory. Swing and the other Java A
 
 ## Use the application
 
-- **Clients.** Enter a name and optional email and phone, then click **Add Client**. A nonempty email must contain `@`. Select a row to load it into the form. Use **Update** to apply your edits or **Delete** to remove that row. **Clear Form** clears the fields and selection.
-- **Offerings.** Enter a name, optional description, and nonnegative unit price. Click **Add Offering**. Select a row to view, update, or delete it. Enter decimal numbers with a period, for example `75.50`.
-- **Quotations.** Click **New Quote**, select a client, and check the date and status. The date starts at today and accepts `YYYY-MM-DD`. Select an offering and enter a positive quantity or number of hours for each **Add Item** action. Select a line and click **Remove Item** to remove it. Enter a discount from 0 to 100 and click **Calculate** to apply it to the preview. **Save Quote** validates the form, calculates the amounts, and saves a quotation with at least one item.
-- **Find and manage saved records.** Each tab supports full-name search with case ignored. Quotations are searched by client name. Use **Show All** to reset the filter. For a saved quotation, select its row and click **Open**. **Save Quote** applies changes to the opened quotation. **Delete Quote** removes the highlighted quotation. **New Quote** or **Open** replaces the current editor contents, so save any edits first.
+1. In **Clients**, enter a name and optional email and phone, then click **Add Client**. A nonempty email must contain `@`. Select a result to edit or delete that client. Use **Clear Form** to return to the add form. Duplicate names are allowed, and the directory displays email and phone so you can identify each record.
+2. In **Offerings**, add a product or service with a name, optional description, and nonnegative unit price. Enter decimals with a period, such as `75.50`. The price represents one unit or one hour. Catalog price edits apply to newly added quotation lines. Existing lines keep their agreed prices.
+3. In **Quotations**, select a client and check the date and status. The date starts at today and accepts `YYYY-MM-DD`. Enter your business or freelancer name in **Prepared by** if you want it on the quotation. Choose an offering, enter a positive quantity or number of hours, and click **Add Item**. Select a line to **Remove Item**. Enter a discount from 0% to 100% and click **Calculate** to refresh the summary.
+4. Click **Preview Quote** to review the itemized document. **Save Quote** assigns a permanent number such as `Q-0001` and requires at least one item. To share the numbered document, open the preview after saving and click **Export as Text**. An unsaved draft shows **Pending save** in the preview.
+5. Select a quotation in **Saved quotations** and click **Open** to edit it. Use **Save Quote** to apply changes or **Delete Quote** to remove the selected quotation. The editor identifies new quotes, open quotes, and unsaved changes. Starting a new quote, opening another record, or closing the window prompts you before discarding quote edits.
 
-Duplicate names can appear in any search result. The displayed numbers identify positions in the current session's record lists and may change after deletion. A saved quotation protects its associated client and offerings from deletion. If an offering used only in an unsaved draft is deleted, remove the marked line before saving the draft. Existing lines retain their agreed unit prices when catalog prices change.
+Search by part of a name in any tab. The quotation search also accepts a quote number, such as `Q-0001`. **Show All** clears the search. Delete actions ask for confirmation, and a saved quotation protects its client and offerings from deletion. If an offering used only in an unsaved draft is deleted, remove the marked line before saving the draft.
+
+## Local data
+
+The application automatically saves successful adds, updates, and deletions to `data/quotations.txt` relative to the folder where you run it. Run from the same folder to reopen the same records. Back up that file to keep a copy of your clients, catalog, quotations, and next quotation number. The folder is ignored by Git. The snapshot is designed for one running application at a time.
+
+If the file is missing, the application starts with an empty store. If it cannot read the file, it opens a clearly labeled temporary session and preserves the original file for recovery. Records entered in that session last until you close the window.
 
 ## Application structure
 
@@ -29,8 +36,9 @@ Duplicate names can appear in any search result. The displayed numbers identify 
 | --- | --- |
 | `Main.java` | Starts Swing, creates the shared `DataStore`, and opens the window |
 | `src/model` | Defines `Client`, `Offering`, `QuoteItem`, and `Quote`; validates model data and calculates totals |
-| `src/storage/DataStore.java` | Holds the three record collections, searches them, and checks quotation references |
-| `src/ui` | Hosts the tabbed window, module panels, forms, and list renderers |
+| `src/storage/DataStore.java` | Manages the three record collections, partial searches, quote numbers, and relationship rules |
+| `src/storage/DataFile.java` | Reads and writes the UTF-8 snapshot using buffered text I/O |
+| `src/ui` | Hosts the window, forms, lists, workflow, and quotation preview and export |
 | `test` | Plain Java tests for the model, storage, and Swing integration |
 
 ## Run the tests
@@ -38,15 +46,15 @@ Duplicate names can appear in any search result. The displayed numbers identify 
 After compiling the application, run these commands in the same PowerShell window.
 
 ```powershell
-javac --release 11 -cp out -d out test/*.java
+javac --release 11 -encoding UTF-8 -cp out -d out test/*.java
 java -cp out ModelTest
 java -cp out SwingTest
 ```
 
-`SwingTest` requires a graphical session. To capture its three populated tabs, use `java -cp out SwingTest screenshots`.
+`SwingTest` requires a graphical session. To capture the three populated tabs and preview, use `java -cp out SwingTest screenshots`. Tests use sample records and temporary files.
 
 ## Limitations
 
-Records are kept in memory and cleared when the application closes. Saved quotations use one consistent currency chosen by the user outside the application. Amounts use `double` arithmetic and are rounded for display. The status is a label that users can update directly.
+All amounts use the same currency chosen by the freelancer. The catalog and preview display numeric amounts without a currency symbol. Calculations use `double` and amounts are rounded for display. Quotation statuses are set manually.
 
 See [the short project report](PROJECT_REPORT.md) and [the presentation guide](PRESENTATION_GUIDE.md).

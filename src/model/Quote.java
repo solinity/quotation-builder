@@ -13,6 +13,7 @@ public class Quote implements Serializable {
     private Client client;
     private LocalDate date;
     private Status status;
+    private String preparedBy = "";
     private double discountPercent;
     private ArrayList<QuoteItem> items;
 
@@ -54,10 +55,19 @@ public class Quote implements Serializable {
         return getSubtotal() * (1 - discountPercent / 100.0);
     }
 
+    public double getDiscountAmount() {
+        return getSubtotal() * (discountPercent / 100.0);
+    }
+
     public Client getClient()          { return client; }
     public LocalDate getDate()         { return date; }
     public Status getStatus()          { return status; }
     public double getDiscountPercent() { return discountPercent; }
+    public String getPreparedBy()     { return preparedBy; }
+
+    public void setPreparedBy(String preparedBy) {
+        this.preparedBy = preparedBy == null ? "" : preparedBy.trim();
+    }
 
     public void setClient(Client client) {
         if (client == null) {
@@ -94,6 +104,7 @@ public class Quote implements Serializable {
         client = source.client;
         date = source.date;
         status = source.status;
+        preparedBy = source.preparedBy;
         discountPercent = source.discountPercent;
         // QuoteItems are immutable. Each quote owns its own list.
         items = new ArrayList<>(source.items);
