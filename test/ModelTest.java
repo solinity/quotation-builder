@@ -1,17 +1,23 @@
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.Arrays;
 import model.Client;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
 import storage.DataStore;
+import storage.SessionFile;
 
 public class ModelTest {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         testClients();
         testOfferings();
         testCalculations();
         testSavedQuotes();
-        System.out.println("Model and data store tests passed (4 groups).");
+        testSessionFiles();
+        System.out.println("Model and data store tests passed (5 groups).");
     }
 
     private static void testClients() {
@@ -156,6 +162,76 @@ public class ModelTest {
                 "delete exact quote and release offering");
         check(store.getQuote(0) == duplicateName, "other saved quotation survives deletion");
         System.out.println("PASS shared relationships, saved quote updates and protected deletions");
+    }
+
+    private static void testSessionFiles() throws IOException {
+        Path file = Files.createTempFile("quotation-session-test-", SessionFile.EXTENSION);
+        try {
+            DataStore store = new DataStore();
+            SessionFile.save(file, store);
+            check(SessionFile.load(file).getQuoteCount() == 0, "empty session round trip");
+
+            Client client = new Client("Alex", "studio@example.com", "123");
+            store.addClient(new Client("Alex", "other@example.com", ""));
+            store.addClient(client);
+            String description = "Dise\u00f1o y revisi\u00f3n\n" + "Notes ".repeat(15_000) + "End";
+            Offering offering = new Offering("Design", description, 120);
+            store.addOffering(new Offering("Design", "", 75));
+            store.addOffering(offering);
+
+            Quote quote = new Quote(client);
+            quote.setDate(LocalDate.of(2026, 11, 23));
+            quote.setStatus(Quote.Status.ACCEPTED);
+            quote.setDiscountPercent(10);
+            quote.addItem(new QuoteItem(offering, 2, 100, 25));
+            store.addQuote(quote);
+            SessionFile.save(file, store);
+
+            DataStore loaded = SessionFile.load(file);
+            Quote restored = loaded.getQuote(0);
+            check(loaded.getClientCount() == 2 && restored.getClient() == loaded.getClient(1)
+                    && restored.getClient().getEmail().equals("studio@example.com")
+                    && restored.getClient().getPhone().equals("123"), "session retains exact client and contact details");
+            QuoteItem restoredItem = restored.getItems().get(0);
+            check(loaded.getOfferingCount() == 2 && restoredItem.getOffering() == loaded.getOffering(1)
+                    && restoredItem.getOffering().getDescription().equals(description)
+                    && restoredItem.getOffering().getUnitPrice() == 120, "session retains exact offering and multiline text");
+            check(restored.getDate().equals(quote.getDate()) && restored.getStatus() == Quote.Status.ACCEPTED
+                    && restored.getDiscountPercent() == 10 && restoredItem.getDiscountPercent() == 25
+                    && restoredItem.getQuantity() == 2 && restoredItem.getUnitPrice() == 100
+                    && restored.getTotal() == 135, "session retains quotation state and agreed pricing");
+
+            byte[] validFile = Files.readAllBytes(file);
+            quote.setClient(new Client("Unregistered", "", ""));
+            rejectsFileOperation(() -> SessionFile.save(file, store), "save with invalid reference");
+            check(Arrays.equals(validFile, Files.readAllBytes(file)), "failed save preserves the previous file");
+            store.replaceWith(loaded);
+            check(store.getQuote(0) == restored && store.isOfferingReferenced(store.getOffering(1)),
+                    "installed session keeps restored record relationships");
+
+            Files.write(file, Arrays.copyOf(validFile, validFile.length - 1));
+            rejectsFileOperation(() -> SessionFile.load(file), "truncated session");
+            validFile[7] = 100;
+            Files.write(file, validFile);
+            rejectsFileOperation(() -> SessionFile.load(file), "unsupported session version");
+        } finally {
+            Files.deleteIfExists(file);
+        }
+        System.out.println("PASS session files, record identity, repeated saves and invalid files");
+    }
+
+    private static void rejectsFileOperation(FileOperation operation, String description) {
+        try {
+            operation.run();
+        } catch (IOException expected) {
+            return;
+        }
+        throw new AssertionError("Expected file error for " + description);
+    }
+
+    @FunctionalInterface
+    private interface FileOperation {
+        void run() throws IOException;
     }
 
     private static void rejects(Runnable action, String description) {

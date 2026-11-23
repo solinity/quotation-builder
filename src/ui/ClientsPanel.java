@@ -199,6 +199,11 @@ public class ClientsPanel extends JPanel {
         txtPhone.setText("");
     }
 
+    void resetForSession() {
+        clearClientForm();
+        showAllClients();
+    }
+
     void refreshClientList() {
         Client selected = clientList.getSelectedValue();
         clientListModel.clear();

@@ -186,6 +186,11 @@ public class OfferingsPanel extends JPanel {
         searchOfferings();
     }
 
+    void resetForSession() {
+        clearForm();
+        showAllOfferings();
+    }
+
     void refreshOfferingList() {
         Offering selected = offeringList.getSelectedValue();
         offeringModel.clear();

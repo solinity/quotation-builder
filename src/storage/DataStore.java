@@ -3,6 +3,7 @@ package storage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.function.Function;
 import model.Client;
 import model.Offering;
@@ -13,6 +14,18 @@ public class DataStore {
     private final ArrayList<Client> clients = new ArrayList<>();
     private final ArrayList<Offering> offerings = new ArrayList<>();
     private final ArrayList<Quote> quotes = new ArrayList<>();
+
+    public void replaceWith(DataStore source) {
+        Objects.requireNonNull(source);
+        if (source != this) {
+            clients.clear();
+            clients.addAll(source.clients);
+            offerings.clear();
+            offerings.addAll(source.offerings);
+            quotes.clear();
+            quotes.addAll(source.quotes);
+        }
+    }
 
     public void addClient(Client client) {
         if (client == null || hasClient(client)) {

@@ -286,6 +286,11 @@ public class QuotesPanel extends JPanel {
         showTotals();
     }
 
+    void resetForSession() {
+        newQuote();
+        showAllQuotes();
+    }
+
     private void deleteQuote() {
         Quote selected = quoteList.getSelectedValue();
         if (selected == null || !dataStore.removeQuote(selected)) {
