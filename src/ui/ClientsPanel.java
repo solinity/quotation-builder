@@ -1,9 +1,10 @@
+package ui;
+
 import java.awt.BorderLayout;
-import java.awt.GridLayout;
+import java.awt.FlowLayout;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
-import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -11,18 +12,24 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
-import javax.swing.SwingUtilities;
 import model.Client;
+import storage.DataStore;
 
 public class ClientsPanel extends JPanel {
+    private static final long serialVersionUID = 1L;
+
     private final DataStore dataStore;
 
-    private final JTextField txtName = new JTextField(18);
-    private final JTextField txtEmail = new JTextField(18);
-    private final JTextField txtPhone = new JTextField(18);
+    private final JTextField txtName = new JTextField(32);
+    private final JTextField txtEmail = new JTextField(32);
+    private final JTextField txtPhone = new JTextField(32);
+    private final JTextField txtSearch = new JTextField(18);
+    private final JLabel listStatus = new JLabel();
+    private String activeSearch = "";
 
     private final JButton btnAddClient = new JButton("Add Client");
     private final JButton btnSearch = new JButton("Search");
+    private final JButton btnShowAll = new JButton("Show All");
     private final JButton btnUpdate = new JButton("Update");
     private final JButton btnDelete = new JButton("Delete");
 
@@ -39,46 +46,67 @@ public class ClientsPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
         clientList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        clientList.setCellRenderer(new RecordRenderer(dataStore));
+        clientList.getAccessibleContext().setAccessibleName("Registered clients");
         clientList.addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) {
                 populateClientForm();
             }
         });
 
-        add(createFormPanel(), BorderLayout.NORTH);
-        add(new JScrollPane(clientList), BorderLayout.CENTER);
-        add(createButtonPanel(), BorderLayout.SOUTH);
+        JPanel editor = new JPanel(new BorderLayout(0, 5));
+        editor.setBorder(BorderFactory.createTitledBorder("Client details"));
+        editor.add(createFormPanel(), BorderLayout.WEST);
+        editor.add(createButtonPanel(), BorderLayout.SOUTH);
 
+        add(editor, BorderLayout.NORTH);
+        add(createListPanel(), BorderLayout.CENTER);
         refreshClientList();
     }
 
     private JPanel createFormPanel() {
-        JPanel formPanel = new JPanel(new GridLayout(0, 2, 10, 10));
-
-        formPanel.add(new JLabel("Client Name:"));
-        formPanel.add(txtName);
-        formPanel.add(new JLabel("Email:"));
-        formPanel.add(txtEmail);
-        formPanel.add(new JLabel("Phone:"));
-        formPanel.add(txtPhone);
-
+        FormPanel formPanel = new FormPanel();
+        formPanel.addField("Name", txtName);
+        formPanel.addField("Email (optional)", txtEmail);
+        formPanel.addField("Phone (optional)", txtPhone);
         return formPanel;
     }
 
     private JPanel createButtonPanel() {
-        JPanel buttonPanel = new JPanel();
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
+        JButton clear = new JButton("Clear Form");
 
         btnAddClient.addActionListener(event -> addClient());
-        btnSearch.addActionListener(event -> searchClients());
         btnUpdate.addActionListener(event -> updateClient());
         btnDelete.addActionListener(event -> deleteClient());
+        clear.addActionListener(event -> clearClientForm());
 
         buttonPanel.add(btnAddClient);
-        buttonPanel.add(btnSearch);
         buttonPanel.add(btnUpdate);
         buttonPanel.add(btnDelete);
+        buttonPanel.add(clear);
 
         return buttonPanel;
+    }
+
+    private JPanel createListPanel() {
+        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
+        JLabel searchLabel = new JLabel("Search by name");
+        searchLabel.setLabelFor(txtSearch);
+        searchPanel.add(searchLabel);
+        searchPanel.add(txtSearch);
+        searchPanel.add(btnSearch);
+        searchPanel.add(btnShowAll);
+        btnSearch.addActionListener(event -> searchClients());
+        txtSearch.addActionListener(event -> searchClients());
+        btnShowAll.addActionListener(event -> showAllClients());
+
+        JPanel listPanel = new JPanel(new BorderLayout(0, 5));
+        listPanel.setBorder(BorderFactory.createTitledBorder("Registered clients"));
+        listPanel.add(searchPanel, BorderLayout.NORTH);
+        listPanel.add(new JScrollPane(clientList), BorderLayout.CENTER);
+        listPanel.add(listStatus, BorderLayout.SOUTH);
+        return listPanel;
     }
 
     private void addClient() {
@@ -95,28 +123,18 @@ public class ClientsPanel extends JPanel {
         }
 
         dataStore.addClient(client);
-        refreshClientList();
+        showAllClients();
         clearClientForm();
     }
 
     private void searchClients() {
-        String name = txtName.getText().trim();
-        if (name.isEmpty()) {
-            refreshClientList();
-            return;
-        }
+        activeSearch = txtSearch.getText().trim();
+        refreshClientList();
+    }
 
-        clientListModel.clear();
-        for (int i = 0; i < dataStore.getClientCount(); i++) {
-            Client client = dataStore.getClient(i);
-            if (client.getName().equalsIgnoreCase(name)) {
-                clientListModel.addElement(client);
-            }
-        }
-
-        if (clientListModel.getSize() == 0) {
-            JOptionPane.showMessageDialog(this, "No clients found.", "Search Clients", JOptionPane.INFORMATION_MESSAGE);
-        }
+    private void showAllClients() {
+        txtSearch.setText("");
+        searchClients();
     }
 
     private void populateClientForm() {
@@ -150,7 +168,8 @@ public class ClientsPanel extends JPanel {
         selectedClient.setName(validatedClient.getName());
         selectedClient.setEmail(validatedClient.getEmail());
         selectedClient.setPhone(validatedClient.getPhone());
-        refreshClientList();
+        showAllClients();
+        clientList.setSelectedValue(selectedClient, true);
     }
 
     private void deleteClient() {
@@ -160,8 +179,12 @@ public class ClientsPanel extends JPanel {
             return;
         }
 
-        if (!dataStore.removeClient(selectedClient)) {
-            JOptionPane.showMessageDialog(this, "The selected client could not be found.", "Delete Client", JOptionPane.ERROR_MESSAGE);
+        try {
+            if (!dataStore.removeClient(selectedClient)) {
+                throw new IllegalArgumentException("The selected client could not be found.");
+            }
+        } catch (IllegalArgumentException error) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), "Delete Client", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -170,28 +193,19 @@ public class ClientsPanel extends JPanel {
     }
 
     private void clearClientForm() {
+        clientList.clearSelection();
         txtName.setText("");
         txtEmail.setText("");
         txtPhone.setText("");
     }
 
-    private void refreshClientList() {
+    void refreshClientList() {
+        Client selected = clientList.getSelectedValue();
         clientListModel.clear();
-        for (int i = 0; i < dataStore.getClientCount(); i++) {
-            clientListModel.addElement(dataStore.getClient(i));
+        for (Client client : dataStore.searchClients(activeSearch)) {
+            clientListModel.addElement(client);
         }
-    }
-
-    // TEMPORARY standalone preview. Remove when MainFrame integration is complete.
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("Clients Panel - Temporary Preview");
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            DataStore dataStore = new DataStore();
-            frame.add(new ClientsPanel(dataStore));
-            frame.setSize(540, 360);
-            frame.setLocationRelativeTo(null);
-            frame.setVisible(true);
-        });
+        clientList.setSelectedValue(selected, true);
+        listStatus.setText(clientListModel.isEmpty() ? "No clients found." : clientListModel.size() + " shown");
     }
 }

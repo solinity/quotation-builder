@@ -3,6 +3,8 @@ package model;
 import java.io.Serializable;
 
 public class Client implements Serializable {
+   private static final long serialVersionUID = -9073893646574453022L;
+
    private String name;
    private String email; 
    private String phone;

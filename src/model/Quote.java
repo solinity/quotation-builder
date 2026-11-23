@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Quote implements Serializable {
+    private static final long serialVersionUID = 1L;
 
     public enum Status { DRAFT, SENT, ACCEPTED, REJECTED }
 
@@ -13,7 +14,7 @@ public class Quote implements Serializable {
     private LocalDate date;
     private Status status;
     private double discountPercent;
-    private List<QuoteItem> items;
+    private ArrayList<QuoteItem> items;
 
     public Quote(Client client) {
         setClient(client);
@@ -23,10 +24,12 @@ public class Quote implements Serializable {
         this.items = new ArrayList<>();
     }
 
-    // ---- items ----
     public void addItem(QuoteItem item) {
         if (item == null) {
-            throw new IllegalArgumentException("Item can't be null");
+            throw new IllegalArgumentException("Select a quotation item.");
+        }
+        if (!Double.isFinite(getSubtotal() + item.getLineTotal())) {
+            throw new IllegalArgumentException("The quotation subtotal is too large.");
         }
         items.add(item);
     }
@@ -36,10 +39,9 @@ public class Quote implements Serializable {
     }
 
     public List<QuoteItem> getItems() {
-        return items;
+        return new ArrayList<>(items);
     }
 
-    // ---- calculations ----
     public double getSubtotal() {
         double sum = 0;
         for (QuoteItem item : items) {
@@ -52,13 +54,11 @@ public class Quote implements Serializable {
         return getSubtotal() * (1 - discountPercent / 100.0);
     }
 
-    // ---- getters ----
     public Client getClient()          { return client; }
     public LocalDate getDate()         { return date; }
     public Status getStatus()          { return status; }
     public double getDiscountPercent() { return discountPercent; }
 
-    // ---- setters with validation ----
     public void setClient(Client client) {
         if (client == null) {
             throw new IllegalArgumentException("A quote needs a client");
@@ -81,10 +81,22 @@ public class Quote implements Serializable {
     }
 
     public void setDiscountPercent(double discountPercent) {
-        if (discountPercent < 0 || discountPercent > 100) {
-            throw new IllegalArgumentException("Discount must be between 0 and 100");
+        if (!Double.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+            throw new IllegalArgumentException("Discount must be a finite number between 0 and 100.");
         }
-        this.discountPercent = discountPercent;
+        this.discountPercent = discountPercent == 0 ? 0 : discountPercent;
+    }
+
+    public void updateFrom(Quote source) {
+        if (source == null) {
+            throw new IllegalArgumentException("A quotation is required.");
+        }
+        client = source.client;
+        date = source.date;
+        status = source.status;
+        discountPercent = source.discountPercent;
+        // QuoteItems are immutable. Each quote owns its own list.
+        items = new ArrayList<>(source.items);
     }
 
     @Override
