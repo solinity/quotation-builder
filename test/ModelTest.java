@@ -1,22 +1,27 @@
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.Base64;
 import model.Client;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
 import storage.DataStore;
-import storage.SessionFile;
+import storage.SessionDatabase;
 
 public class ModelTest {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, SQLException {
         testClients();
         testOfferings();
         testCalculations();
         testSavedQuotes();
-        testSessionFiles();
+        testSessionDatabase();
         System.out.println("Model and data store tests passed (5 groups).");
     }
 
@@ -164,12 +169,15 @@ public class ModelTest {
         System.out.println("PASS shared relationships, saved quote updates and protected deletions");
     }
 
-    private static void testSessionFiles() throws IOException {
-        Path file = Files.createTempFile("quotation-session-test-", SessionFile.EXTENSION);
+    private static void testSessionDatabase() throws IOException, SQLException {
+        Path directory = Files.createTempDirectory("quotation-session-test-");
+        Path file = directory.resolve("Studio's session #1.sqlite");
+        Path legacy = directory.resolve("previous.qbs");
+        Path unrelated = directory.resolve("unrelated.sqlite");
         try {
             DataStore store = new DataStore();
-            SessionFile.save(file, store);
-            check(SessionFile.load(file).getQuoteCount() == 0, "empty session round trip");
+            SessionDatabase.save(file, store);
+            check(SessionDatabase.load(file).getQuoteCount() == 0, "empty session round trip");
 
             Client client = new Client("Alex", "studio@example.com", "123");
             store.addClient(new Client("Alex", "other@example.com", ""));
@@ -185,9 +193,9 @@ public class ModelTest {
             quote.setDiscountPercent(10);
             quote.addItem(new QuoteItem(offering, 2, 100, 25));
             store.addQuote(quote);
-            SessionFile.save(file, store);
+            SessionDatabase.save(file, store);
 
-            DataStore loaded = SessionFile.load(file);
+            DataStore loaded = SessionDatabase.load(file);
             Quote restored = loaded.getQuote(0);
             check(loaded.getClientCount() == 2 && restored.getClient() == loaded.getClient(1)
                     && restored.getClient().getEmail().equals("studio@example.com")
@@ -201,23 +209,52 @@ public class ModelTest {
                     && restoredItem.getQuantity() == 2 && restoredItem.getUnitPrice() == 100
                     && restored.getTotal() == 135, "session retains quotation state and agreed pricing");
 
-            byte[] validFile = Files.readAllBytes(file);
+            store.getClient(0).setName("Unsaved change");
             quote.setClient(new Client("Unregistered", "", ""));
-            rejectsFileOperation(() -> SessionFile.save(file, store), "save with invalid reference");
-            check(Arrays.equals(validFile, Files.readAllBytes(file)), "failed save preserves the previous file");
+            rejectsFileOperation(() -> SessionDatabase.save(file, store), "save with invalid reference");
+            DataStore saved = SessionDatabase.load(file);
+            check(saved.getClient(0).getName().equals("Alex") && saved.getQuote(0).getTotal() == 135,
+                    "failed transaction preserves the previous database");
             store.replaceWith(loaded);
             check(store.getQuote(0) == restored && store.isOfferingReferenced(store.getOffering(1)),
                     "installed session keeps restored record relationships");
 
-            Files.write(file, Arrays.copyOf(validFile, validFile.length - 1));
-            rejectsFileOperation(() -> SessionFile.load(file), "truncated session");
-            validFile[7] = 100;
-            Files.write(file, validFile);
-            rejectsFileOperation(() -> SessionFile.load(file), "unsupported session version");
+            try (Connection database = DriverManager.getConnection("jdbc:sqlite:" + file.toUri().toASCIIString());
+                    Statement sql = database.createStatement()) {
+                sql.execute("PRAGMA user_version = 99");
+            }
+            rejectsFileOperation(() -> SessionDatabase.load(file), "unsupported database version");
+
+            try (Connection database = DriverManager.getConnection("jdbc:sqlite:" + unrelated.toUri().toASCIIString());
+                    Statement sql = database.createStatement()) {
+                sql.execute("CREATE TABLE notes (note TEXT)");
+            }
+            byte[] unrelatedBytes = Files.readAllBytes(unrelated);
+            rejectsFileOperation(() -> SessionDatabase.load(unrelated), "unrelated SQLite file");
+            rejectsFileOperation(() -> SessionDatabase.save(unrelated, store), "overwriting an unrelated SQLite file");
+            check(Arrays.equals(unrelatedBytes, Files.readAllBytes(unrelated)), "unrelated database stays intact");
+
+            // Exported by the previous version's .qbs writer.
+            byte[] legacyBytes = Base64.getDecoder().decode(
+                    "UUJTRgAAAAEAAAABAAAABEFsZXgAAAAQdGVzdEBleGFtcGxlLmNvbQAAAAAAAAABAAAABkRlc2lnbgAAABFMaW5l"
+                            + "IG9uZQpMaW5lIHR3b0BeAAAAAAAAAAAAAQAAAAAAAAAAAABRLAAAAARTRU5UQCQAAAAAAAAAAAABAAAAAEAAAAAAAAAAQFkAAAAAAABAOQAAAAAAAA==");
+            Files.write(legacy, legacyBytes);
+            DataStore imported = SessionDatabase.load(legacy);
+            Files.delete(file);
+            SessionDatabase.save(file, imported);
+            DataStore converted = SessionDatabase.load(file);
+            check(converted.getQuote(0).getClient() == converted.getClient(0)
+                    && converted.getQuote(0).getTotal() == 135
+                    && converted.getOffering(0).getDescription().equals("Line one\nLine two"),
+                    "a legacy session imports into SQLite with relationships and pricing");
+            check(Arrays.equals(legacyBytes, Files.readAllBytes(legacy)), "migration preserves the legacy file");
         } finally {
             Files.deleteIfExists(file);
+            Files.deleteIfExists(legacy);
+            Files.deleteIfExists(unrelated);
+            Files.deleteIfExists(directory);
         }
-        System.out.println("PASS session files, record identity, repeated saves and invalid files");
+        System.out.println("PASS SQLite session round trip, rollback, and legacy import");
     }
 
     private static void rejectsFileOperation(FileOperation operation, String description) {

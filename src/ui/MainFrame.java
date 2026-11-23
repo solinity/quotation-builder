@@ -15,7 +15,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import storage.DataStore;
-import storage.SessionFile;
+import storage.LegacySessionFile;
+import storage.SessionDatabase;
 
 public class MainFrame extends JFrame {
     private static final long serialVersionUID = 1L;
@@ -57,7 +58,7 @@ public class MainFrame extends JFrame {
         JMenu file = new JMenu("File");
         JMenuItem save = new JMenuItem("Save Session");
         save.addActionListener(event -> {
-            if (sessionFile == null) {
+            if (sessionFile == null || LegacySessionFile.matches(sessionFile)) {
                 saveSessionAs();
             } else {
                 saveSession(sessionFile);
@@ -95,8 +96,7 @@ public class MainFrame extends JFrame {
                 dialog.setDirectory(sessionFile.getParent().toString());
             }
             if (mode == FileDialog.SAVE) {
-                dialog.setFile(sessionFile == null ? "quotation-session" + SessionFile.EXTENSION
-                        : sessionFile.getFileName().toString());
+                dialog.setFile(suggestedSaveName());
             }
             dialog.setVisible(true);
             File[] selected = dialog.getFiles();
@@ -106,13 +106,24 @@ public class MainFrame extends JFrame {
         }
     }
 
+    private String suggestedSaveName() {
+        if (sessionFile == null) {
+            return "quotation-session" + SessionDatabase.EXTENSION;
+        }
+        String name = sessionFile.getFileName().toString();
+        if (LegacySessionFile.matches(sessionFile)) {
+            return name.substring(0, name.lastIndexOf('.')) + SessionDatabase.EXTENSION;
+        }
+        return name;
+    }
+
     private void saveSessionAs() {
         Path selected = chooseFile("Save Session As", FileDialog.SAVE);
         if (selected == null) {
             return;
         }
-        if (!selected.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(SessionFile.EXTENSION)) {
-            selected = selected.resolveSibling(selected.getFileName().toString() + SessionFile.EXTENSION);
+        if (!selected.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(SessionDatabase.EXTENSION)) {
+            selected = selected.resolveSibling(selected.getFileName().toString() + SessionDatabase.EXTENSION);
             if (Files.exists(selected) && JOptionPane.showConfirmDialog(this,
                     "Replace the existing session file?\n" + selected, "Save Session",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
@@ -124,7 +135,7 @@ public class MainFrame extends JFrame {
 
     private void saveSession(Path selected) {
         try {
-            SessionFile.save(selected, dataStore);
+            SessionDatabase.save(selected, dataStore);
             setSessionFile(selected);
         } catch (IOException error) {
             JOptionPane.showMessageDialog(this, error.getMessage(), "Could Not Save Session", JOptionPane.ERROR_MESSAGE);
@@ -133,7 +144,7 @@ public class MainFrame extends JFrame {
 
     private void loadSession(Path selected) {
         try {
-            DataStore loaded = SessionFile.load(selected);
+            DataStore loaded = SessionDatabase.load(selected);
             if ((dataStore.getClientCount() > 0 || dataStore.getOfferingCount() > 0 || dataStore.getQuoteCount() > 0)
                     && JOptionPane.showConfirmDialog(this,
                     "Load this file and replace the records and open forms in this window?", "Load Session",
@@ -161,7 +172,8 @@ public class MainFrame extends JFrame {
             JTextField location = new JTextField(sessionFile.toString(), 52);
             location.setEditable(false);
             location.setCaretPosition(0);
-            message = new Object[] {"Current session save file", location};
+            String label = LegacySessionFile.matches(sessionFile) ? "Imported session file" : "Current session database";
+            message = new Object[] {label, location};
         }
         JOptionPane.showMessageDialog(this, message, "Session File Location", JOptionPane.INFORMATION_MESSAGE);
     }
