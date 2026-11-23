@@ -1,5 +1,6 @@
 package model;
 
+import java.io.Serializable;
 
 public class Client implements Serializable {
    private String name;
@@ -33,10 +34,10 @@ public class Client implements Serializable {
 
    public void setEmail(String email) {
       String cleaned = clean(email);
-      if (!cleaned.isEmpty() || !cleaned.contains("@")) {
+      if (!cleaned.isEmpty() && !cleaned.contains("@")) {
          throw new IllegalArgumentException("Email must contain '@'");
       }
-      this.email = email;
+      this.email = cleaned;
    }
 
     public void setPhone(String phone) {
