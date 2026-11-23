@@ -2,6 +2,7 @@ package ui;
 
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.awt.KeyboardFocusManager;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -10,6 +11,7 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import model.Offering;
@@ -20,7 +22,7 @@ public class OfferingsPanel extends JPanel {
 
     private final DataStore dataStore;
     private final JTextField nameField = new JTextField(32);
-    private final JTextField descriptionField = new JTextField(32);
+    private final JTextArea descriptionField = new JTextArea(4, 32);
     private final JTextField priceField = new JTextField(32);
     private final JTextField searchField = new JTextField(18);
     private final JLabel listStatus = new JLabel();
@@ -47,9 +49,15 @@ public class OfferingsPanel extends JPanel {
     }
 
     private JPanel createEditor() {
+        descriptionField.setLineWrap(true);
+        descriptionField.setWrapStyleWord(true);
+        descriptionField.setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, null);
+        descriptionField.setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, null);
+        JScrollPane descriptionScroll = new JScrollPane(descriptionField);
+
         FormPanel form = new FormPanel();
         form.addField("Name", nameField);
-        form.addField("Description (optional)", descriptionField);
+        form.addField("Description (optional)", descriptionScroll).setLabelFor(descriptionField);
         form.addField("Unit price", priceField);
 
         JButton add = new JButton("Add Offering");
@@ -156,6 +164,7 @@ public class OfferingsPanel extends JPanel {
         if (selected != null) {
             nameField.setText(selected.getName());
             descriptionField.setText(selected.getDescription());
+            descriptionField.setCaretPosition(0);
             priceField.setText(Double.toString(selected.getUnitPrice()));
         }
     }

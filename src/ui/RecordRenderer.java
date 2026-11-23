@@ -35,8 +35,9 @@ class RecordRenderer extends DefaultListCellRenderer {
             Offering offering = (Offering) value;
             int number = dataStore.getOfferingNumber(offering);
             String prefix = number > 0 ? "#" + number + "  " : "";
-            String description = offering.getDescription().isEmpty() ? "" : "  |  " + offering.getDescription();
-            return prefix + offering.getName() + "  |  " + amount(offering.getUnitPrice()) + description;
+            String description = offering.getDescription().replace('\n', ' ').replace('\r', ' ');
+            String suffix = description.isEmpty() ? "" : "  |  " + description;
+            return prefix + offering.getName() + "  |  " + amount(offering.getUnitPrice()) + suffix;
         }
         if (value instanceof Quote) {
             Quote quote = (Quote) value;

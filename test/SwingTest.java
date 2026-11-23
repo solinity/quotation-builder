@@ -18,6 +18,7 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -106,6 +107,7 @@ public class SwingTest {
     private void testOfferingActions() {
         Component offerings = tab("Offerings");
         JList<?> list = list(offerings, "Registered offerings");
+        JTextArea description = descriptionField(offerings);
         expectError(offerings, "Update", "Select an offering to update");
         expectError(offerings, "Delete", "Select an offering to delete");
         for (String invalid : new String[] {"abc", "-1", "NaN", "Infinity", "-Infinity"}) {
@@ -117,25 +119,28 @@ public class SwingTest {
         expectError(offerings, "Add Offering", "Enter an offering name");
 
         addOffering(offerings, "Design", "Basic layout", "75");
-        addOffering(offerings, "Design", "Brand package", "120");
+        String originalDescription = "Brand package\nIncludes logo guidelines";
+        addOffering(offerings, "Design", originalDescription, "120");
         addOffering(offerings, "Consultation", "Project review", "30");
         addOffering(offerings, "Free discovery", "", "0");
         ModelTest.check(list.getModel().getSize() == 4, "offerings displayed after add");
         search(offerings, "Search by name", " design ");
         ModelTest.check(list.getModel().getSize() == 2, "offering search returns duplicate matches");
         list.setSelectedIndex(1);
-        ModelTest.check(field(offerings, "Description (optional)").getText().equals("Brand package"),
-                "selection populates the exact offering");
+        ModelTest.check(description.getText().equals(originalDescription),
+                "selecting the exact offering restores its line breaks");
         Offering offering = store.getOffering(1);
         fillOffering(offerings, "Unsaved name", "Invalid change", "-2");
         expectError(offerings, "Update", "finite number");
         ModelTest.check(offering.getName().equals("Design") && offering.getUnitPrice() == 120, "offering edit is atomic");
-        fillOffering(offerings, "Design", "Brand package and review", "120");
+        String updatedDescription = "Brand package\nIncludes a review of the logo, typography, and color palette.";
+        fillOffering(offerings, "Design", updatedDescription, "120");
         click(offerings, "Update");
-        ModelTest.check(store.getOffering(1) == offering && offering.getDescription().contains("review"),
-                "update exact offering");
+        ModelTest.check(store.getOffering(1) == offering && offering.getDescription().equals(updatedDescription),
+                "updating the exact offering saves its line breaks");
         click(offerings, "Clear Form");
-        ModelTest.check(list.isSelectionEmpty() && field(offerings, "Unit price").getText().isEmpty(), "clear offering form");
+        ModelTest.check(list.isSelectionEmpty() && description.getText().isEmpty()
+                && field(offerings, "Unit price").getText().isEmpty(), "clear offering form");
         search(offerings, "Search by name", "Missing");
         ModelTest.check(list.getModel().getSize() == 0, "offering no-match search");
         click(offerings, "Show All");
@@ -143,6 +148,7 @@ public class SwingTest {
         click(offerings, "Delete");
         ModelTest.check(store.getOfferingCount() == 3 && store.getOffering(1) == offering, "delete selected offering");
         list.setSelectedIndex(1);
+        ModelTest.check(description.getText().equals(updatedDescription), "reselection restores the edited description");
         capture("offerings.png");
         System.out.println("PASS Swing offering buttons, search, duplicate selection and validation");
     }
@@ -174,7 +180,8 @@ public class SwingTest {
         ModelTest.check(matches(offerings).getModel().getSize() == 2, "offering search matches partial duplicate names");
         expectError(quotes, "Add Item", "Select an offering");
         choose(offerings, "eSIG", store.getOffering(1));
-        ModelTest.check(offerings.getText().contains("Brand package"), "selection displays the exact offering");
+        ModelTest.check(offerings.getText().contains("Brand package Includes a review"),
+                "selection displays the exact offering with a single-line description preview");
         for (String invalid : new String[] {"abc", "0", "-1", "NaN", "Infinity", "1e308"}) {
             field(quotes, "Quantity / hours").setText(invalid);
             String message = invalid.equals("abc") ? "numerical quantity" : "finite number greater than zero";
@@ -344,8 +351,12 @@ public class SwingTest {
 
     private static void fillOffering(Component panel, String name, String description, String price) {
         field(panel, "Name").setText(name);
-        field(panel, "Description (optional)").setText(description);
+        descriptionField(panel).setText(description);
         field(panel, "Unit price").setText(price);
+    }
+
+    private static JTextArea descriptionField(Component panel) {
+        return (JTextArea) label(panel, "Description (optional)").getLabelFor();
     }
 
     private void addItem(Component panel, int offeringIndex, String quantity) {
