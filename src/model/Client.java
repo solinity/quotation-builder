@@ -1,95 +1,51 @@
 package model;
 
+public class Client {
+    private final String name;
+    private final String email;
+    private final String phone;
 
-public class Client implements Serializable {
-   private String name;
-   private String email; 
-   private String phone;
+    public Client(String name, String email, String phone) {
+        this.name = name.trim();
+        this.email = email.trim();
+        this.phone = phone.trim();
 
-   public Client(String name, String email, String phone) {
-      setName(name);
-      setEmail(email);
-      setPhone(phone);
-   }
-
-   public String getName() {
-      return name;
-   }
-
-   public String getEmail() {
-      return email;
-   }
-
-   public String getPhone() {
-      return phone;
-   }
-
-   public void setName(String name) {
-      if (name == null || name.trim().isEmpty()) {
-         throw new IllegalArgumentException("Name can't be empty");
-      } 
-      this.name = name.trim();
-   }
-
-   public void setEmail(String email) {
-      String cleaned = clean(email);
-      if (!cleaned.isEmpty() || !cleaned.contains("@")) {
-         throw new IllegalArgumentException("Email must contain '@'");
-      }
-      this.email = email;
-   }
-
-    public void setPhone(String phone) {
-        this.phone = clean(phone);
+        if (this.name.isEmpty()) {
+            throw new IllegalArgumentException("Enter the client's name.");
+        }
+        if (!this.email.isEmpty()) {
+            int at = this.email.indexOf('@');
+            if (at < 1 || at == this.email.length() - 1
+                    || at != this.email.lastIndexOf('@') || this.email.contains(" ")) {
+                throw new IllegalArgumentException("Enter an email such as name@example.com.");
+            }
+        }
     }
 
-    public String getPhoneOrDefault() {
-        return phone.isEmpty() ? "N/A" : phone;
+    public String getName() {
+        return name;
     }
 
-    public String getEmailOrDefault() {
-        return email.isEmpty() ? "N/A" : email;
+    public String getEmail() {
+        return email;
     }
 
-    private static String clean(String value) {
-        return value == null ? "" : value.trim();
+    public String getPhone() {
+        return phone;
+    }
+
+    public boolean hasSameContact(Client client) {
+        return name.equals(client.name) && email.equals(client.email) && phone.equals(client.phone);
     }
 
     @Override
     public String toString() {
+        if (!email.isEmpty()) {
+            return name + " (" + email + ")";
+        }
+        if (!phone.isEmpty()) {
+            return name + " (" + phone + ")";
+        }
         return name;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
