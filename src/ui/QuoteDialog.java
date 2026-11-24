@@ -34,8 +34,7 @@ final class QuoteDialog extends JDialog {
         scroll.setBorder(BorderFactory.createEmptyBorder());
         add(scroll, BorderLayout.CENTER);
 
-        JButton close = new JButton("Close");
-        close.addActionListener(event -> dispose());
+        JButton close = SwingSupport.button("Close", event -> dispose());
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 7));
         buttons.add(close);
         add(buttons, BorderLayout.SOUTH);

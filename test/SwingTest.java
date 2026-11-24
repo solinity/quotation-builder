@@ -27,7 +27,7 @@ import javax.swing.text.BadLocationException;
 import model.Client;
 import model.Offering;
 import model.Quote;
-import model.SessionCurrency;
+import model.CurrencySettings.SessionCurrency;
 import storage.DataStore;
 import ui.MainFrame;
 

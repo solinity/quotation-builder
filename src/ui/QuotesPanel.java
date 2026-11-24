@@ -1,9 +1,10 @@
 package ui;
 
+import static ui.SwingSupport.button;
+
 import export.QuotePdf;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.FileDialog;
 import java.awt.FlowLayout;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -11,7 +12,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
-import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -26,6 +26,8 @@ import model.Offering;
 import model.Quote;
 import model.QuoteItem;
 import storage.DataStore;
+import ui.SwingSupport.FormPanel;
+import ui.SwingSupport.RecordRenderer;
 
 public class QuotesPanel extends JPanel {
     private static final long serialVersionUID = 1L;
@@ -81,29 +83,17 @@ public class QuotesPanel extends JPanel {
         searchBar.add(searchField, BorderLayout.CENTER);
 
         JPanel searchButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
-        JButton search = new JButton("Search");
-        JButton showAll = new JButton("Show All");
-        search.addActionListener(event -> searchQuotes());
         searchField.addActionListener(event -> searchQuotes());
-        showAll.addActionListener(event -> showAllQuotes());
-        searchButtons.add(search);
-        searchButtons.add(showAll);
+        searchButtons.add(button("Search", event -> searchQuotes()));
+        searchButtons.add(button("Show All", event -> showAllQuotes()));
         searchButtons.add(results);
         searchBar.add(searchButtons, BorderLayout.SOUTH);
 
         JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 3));
-        JButton open = new JButton("Open");
-        JButton edit = new JButton("Edit");
-        JButton export = new JButton("Export PDF");
-        JButton delete = new JButton("Delete Quote");
-        open.addActionListener(event -> openQuote());
-        edit.addActionListener(event -> editQuote());
-        export.addActionListener(event -> exportPdf());
-        delete.addActionListener(event -> deleteQuote());
-        recordButtons.add(open);
-        recordButtons.add(edit);
-        recordButtons.add(export);
-        recordButtons.add(delete);
+        recordButtons.add(button("Open", event -> openQuote()));
+        recordButtons.add(button("Edit", event -> editQuote()));
+        recordButtons.add(button("Export PDF", event -> exportPdf()));
+        recordButtons.add(button("Delete Quote", event -> deleteQuote()));
 
         JPanel saved = new JPanel(new BorderLayout(0, 5));
         saved.setBorder(BorderFactory.createTitledBorder("Saved quotations"));
@@ -147,12 +137,8 @@ public class QuotesPanel extends JPanel {
         itemFields.addField("Item discount (%)", itemDiscountField);
 
         JPanel itemButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
-        JButton add = new JButton("Add Item");
-        JButton remove = new JButton("Remove Item");
-        add.addActionListener(event -> addItem());
-        remove.addActionListener(event -> removeItem());
-        itemButtons.add(add);
-        itemButtons.add(remove);
+        itemButtons.add(button("Add Item", event -> addItem()));
+        itemButtons.add(button("Remove Item", event -> removeItem()));
 
         JPanel itemEditor = new JPanel(new BorderLayout(0, 5));
         itemEditor.setBorder(BorderFactory.createTitledBorder("Quotation items"));
@@ -164,9 +150,7 @@ public class QuotesPanel extends JPanel {
 
     private JPanel createTotalsPanel() {
         JPanel totals = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        JButton calculate = new JButton("Calculate");
-        calculate.addActionListener(event -> calculate());
-        totals.add(calculate);
+        totals.add(button("Calculate", event -> calculate()));
         totals.add(subtotalLabel);
         totals.add(totalLabel);
         return totals;
@@ -174,12 +158,8 @@ public class QuotesPanel extends JPanel {
 
     private JPanel createEditorButtons() {
         JPanel editorButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
-        JButton create = new JButton("New Quote");
-        JButton save = new JButton("Save Quote");
-        create.addActionListener(event -> newQuote());
-        save.addActionListener(event -> saveQuote());
-        editorButtons.add(create);
-        editorButtons.add(save);
+        editorButtons.add(button("New Quote", event -> newQuote()));
+        editorButtons.add(button("Save Quote", event -> saveQuote()));
         return editorButtons;
     }
 
@@ -291,12 +271,7 @@ public class QuotesPanel extends JPanel {
             return;
         }
         int number = dataStore.getQuoteNumber(selected);
-        Path selectedFile = FileDialogs.choose(this, "Export Quotation as PDF", FileDialog.SAVE,
-                null, "quotation-" + number + ".pdf");
-        if (selectedFile == null) {
-            return;
-        }
-        Path target = FileDialogs.addExtension(this, selectedFile, ".pdf", "Export PDF");
+        Path target = SwingSupport.saveAs(this, "Export Quotation as PDF", null, "quotation-" + number + ".pdf", ".pdf");
         if (target == null) {
             return;
         }

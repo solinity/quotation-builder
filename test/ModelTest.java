@@ -16,7 +16,7 @@ import model.CurrencySettings;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
-import model.SessionCurrency;
+import model.CurrencySettings.SessionCurrency;
 import storage.DataStore;
 import storage.SessionDatabase;
 

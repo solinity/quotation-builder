@@ -9,7 +9,7 @@ import model.CurrencySettings;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
-import model.SessionCurrency;
+import model.CurrencySettings.SessionCurrency;
 
 public class DataStore {
     private final ArrayList<Client> clients = new ArrayList<>();

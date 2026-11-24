@@ -22,6 +22,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import ui.SwingSupport.RecordRenderer;
 
 final class RecordSearchField<T> extends JTextField {
     private static final long serialVersionUID = 1L;
