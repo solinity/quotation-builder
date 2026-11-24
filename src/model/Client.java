@@ -3,44 +3,44 @@ package model;
 import java.io.Serializable;
 
 public class Client implements Serializable {
-   private static final long serialVersionUID = -9073893646574453022L;
+    private static final long serialVersionUID = -9073893646574453022L;
 
-   private String name;
-   private String email; 
-   private String phone;
+    private String name;
+    private String email;
+    private String phone;
 
-   public Client(String name, String email, String phone) {
-      setName(name);
-      setEmail(email);
-      setPhone(phone);
-   }
+    public Client(String name, String email, String phone) {
+        setName(name);
+        setEmail(email);
+        setPhone(phone);
+    }
 
-   public String getName() {
-      return name;
-   }
+    public String getName() {
+        return name;
+    }
 
-   public String getEmail() {
-      return email;
-   }
+    public String getEmail() {
+        return email;
+    }
 
-   public String getPhone() {
-      return phone;
-   }
+    public String getPhone() {
+        return phone;
+    }
 
-   public void setName(String name) {
-      if (name == null || name.trim().isEmpty()) {
-         throw new IllegalArgumentException("Name can't be empty");
-      } 
-      this.name = name.trim();
-   }
+    public void setName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Name can't be empty");
+        }
+        this.name = name.trim();
+    }
 
-   public void setEmail(String email) {
-      String cleaned = clean(email);
-      if (!cleaned.isEmpty() && !cleaned.contains("@")) {
-         throw new IllegalArgumentException("Email must contain '@'");
-      }
-      this.email = cleaned;
-   }
+    public void setEmail(String email) {
+        String cleaned = clean(email);
+        if (!cleaned.isEmpty() && !cleaned.contains("@")) {
+            throw new IllegalArgumentException("Email must contain '@'");
+        }
+        this.email = cleaned;
+    }
 
     public void setPhone(String phone) {
         this.phone = clean(phone);
@@ -63,36 +63,3 @@ public class Client implements Serializable {
         return name;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

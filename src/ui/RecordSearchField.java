@@ -44,6 +44,11 @@ final class RecordSearchField<T> extends JTextField {
         this.renderer = renderer;
         setToolTipText("Type a name to search");
 
+        configurePopup();
+        registerListeners();
+    }
+
+    private void configurePopup() {
         results.setCellRenderer(renderer);
         results.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         results.setFixedCellHeight(results.getFontMetrics(results.getFont()).getHeight() + 4);
@@ -58,11 +63,24 @@ final class RecordSearchField<T> extends JTextField {
         suggestions.setLayout(new BorderLayout());
         suggestions.add(resultsPane, BorderLayout.CENTER);
         suggestions.add(noMatches, BorderLayout.SOUTH);
+    }
 
+    private void registerListeners() {
         getDocument().addDocumentListener(new DocumentListener() {
-            @Override public void insertUpdate(DocumentEvent event) { queryChanged(); }
-            @Override public void removeUpdate(DocumentEvent event) { queryChanged(); }
-            @Override public void changedUpdate(DocumentEvent event) { queryChanged(); }
+            @Override
+            public void insertUpdate(DocumentEvent event) {
+                queryChanged();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent event) {
+                queryChanged();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent event) {
+                queryChanged();
+            }
         });
         addFocusListener(new FocusAdapter() {
             @Override

@@ -2,11 +2,8 @@ package ui;
 
 import java.awt.Dimension;
 import java.awt.FileDialog;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
@@ -63,22 +60,11 @@ public class MainFrame extends JFrame {
     private JMenuBar createMenuBar() {
         JMenu file = new JMenu("File");
         JMenuItem save = new JMenuItem("Save Session");
-        save.addActionListener(event -> {
-            if (sessionFile == null || LegacySessionFile.matches(sessionFile)) {
-                saveSessionAs();
-            } else {
-                saveSession(sessionFile);
-            }
-        });
+        save.addActionListener(event -> saveSession());
         JMenuItem saveAs = new JMenuItem("Save Session As...");
         saveAs.addActionListener(event -> saveSessionAs());
         JMenuItem load = new JMenuItem("Load Session...");
-        load.addActionListener(event -> {
-            Path selected = chooseFile("Load Session", FileDialog.LOAD);
-            if (selected != null) {
-                loadSession(selected);
-            }
-        });
+        load.addActionListener(event -> openSession());
         file.add(save);
         file.add(saveAs);
         file.addSeparator();
@@ -95,20 +81,22 @@ public class MainFrame extends JFrame {
         return menuBar;
     }
 
-    private Path chooseFile(String title, int mode) {
-        FileDialog dialog = new FileDialog(this, title, mode);
-        try {
-            if (sessionFile != null) {
-                dialog.setDirectory(sessionFile.getParent().toString());
-            }
-            if (mode == FileDialog.SAVE) {
-                dialog.setFile(suggestedSaveName());
-            }
-            dialog.setVisible(true);
-            File[] selected = dialog.getFiles();
-            return selected.length == 0 ? null : selected[0].toPath().toAbsolutePath().normalize();
-        } finally {
-            dialog.dispose();
+    private Path sessionDirectory() {
+        return sessionFile == null ? null : sessionFile.getParent();
+    }
+
+    private void openSession() {
+        Path selected = FileDialogs.choose(this, "Load Session", FileDialog.LOAD, sessionDirectory(), null);
+        if (selected != null) {
+            loadSession(selected);
+        }
+    }
+
+    private void saveSession() {
+        if (sessionFile == null || LegacySessionFile.matches(sessionFile)) {
+            saveSessionAs();
+        } else {
+            saveSession(sessionFile);
         }
     }
 
@@ -124,19 +112,15 @@ public class MainFrame extends JFrame {
     }
 
     private void saveSessionAs() {
-        Path selected = chooseFile("Save Session As", FileDialog.SAVE);
+        Path selected = FileDialogs.choose(this, "Save Session As", FileDialog.SAVE,
+                sessionDirectory(), suggestedSaveName());
         if (selected == null) {
             return;
         }
-        if (!selected.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(SessionDatabase.EXTENSION)) {
-            selected = selected.resolveSibling(selected.getFileName().toString() + SessionDatabase.EXTENSION);
-            if (Files.exists(selected) && JOptionPane.showConfirmDialog(this,
-                    "Replace the existing session file?\n" + selected, "Save Session",
-                    JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
-                return;
-            }
+        Path target = FileDialogs.addExtension(this, selected, SessionDatabase.EXTENSION, "Save Session");
+        if (target != null) {
+            saveSession(target);
         }
-        saveSession(selected);
     }
 
     private void saveSession(Path selected) {

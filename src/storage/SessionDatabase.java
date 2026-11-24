@@ -81,21 +81,14 @@ public final class SessionDatabase {
             sql.execute("PRAGMA foreign_keys = ON");
             database.setAutoCommit(false);
             try {
-                if (newFile) {
-                    createSchema(sql);
-                } else {
-                    upgradeSettingsTable(sql, checkSchema(sql));
-                    sql.executeUpdate("DELETE FROM quotations");
-                    sql.executeUpdate("DELETE FROM offerings");
-                    sql.executeUpdate("DELETE FROM clients");
-                }
-
+                prepareTables(sql, newFile);
                 writeCurrencySettings(database, data.getCurrencySettings());
                 writeClients(database, data);
                 writeOfferings(database, data);
                 writeQuotes(database, data);
                 database.commit();
             } catch (SQLException | IOException | RuntimeException error) {
+                // Save the whole session, or restore the previous database on error.
                 try {
                     database.rollback();
                 } catch (SQLException rollbackError) {
@@ -106,6 +99,19 @@ public final class SessionDatabase {
         } catch (SQLException error) {
             throw databaseError("write", error);
         }
+    }
+
+    private static void prepareTables(Statement sql, boolean newFile) throws SQLException, IOException {
+        if (newFile) {
+            createSchema(sql);
+            return;
+        }
+
+        upgradeSettingsTable(sql, checkSchema(sql));
+        // Quotations own their line items. Remove them before the clients and offerings they reference.
+        sql.executeUpdate("DELETE FROM quotations");
+        sql.executeUpdate("DELETE FROM offerings");
+        sql.executeUpdate("DELETE FROM clients");
     }
 
     private static void createSchema(Statement sql) throws SQLException {
@@ -259,6 +265,7 @@ public final class SessionDatabase {
     }
 
     private static Map<Long, Client> readClients(Statement sql, DataStore data) throws SQLException {
+        // Quotation rows refer to database IDs, so each ID must resolve to the same Java object.
         Map<Long, Client> clients = new HashMap<>();
         try (ResultSet rows = sql.executeQuery("SELECT id, name, email, phone FROM clients ORDER BY id")) {
             while (rows.next()) {

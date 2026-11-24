@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.function.Function;
 import model.Client;
 import model.CurrencySettings;
 import model.Offering;
@@ -73,18 +72,21 @@ public class DataStore {
     }
 
     public ArrayList<Client> searchClients(String name) {
-        String keyword = name.trim();
+        return findClients(name.trim(), false);
+    }
+
+    public List<Client> findClientsByName(String name) {
+        return findClients(name.strip().toLowerCase(Locale.ROOT), true);
+    }
+
+    private ArrayList<Client> findClients(String keyword, boolean partialMatch) {
         ArrayList<Client> matches = new ArrayList<>();
         for (Client client : clients) {
-            if (keyword.isEmpty() || client.getName().equalsIgnoreCase(keyword)) {
+            if (matchesName(client.getName(), keyword, partialMatch)) {
                 matches.add(client);
             }
         }
         return matches;
-    }
-
-    public List<Client> findClientsByName(String name) {
-        return findByName(clients, Client::getName, name);
     }
 
     public void addOffering(Offering offering) {
@@ -121,18 +123,21 @@ public class DataStore {
     }
 
     public ArrayList<Offering> searchOfferings(String name) {
-        String keyword = name.trim();
+        return findOfferings(name.trim(), false);
+    }
+
+    public List<Offering> findOfferingsByName(String name) {
+        return findOfferings(name.strip().toLowerCase(Locale.ROOT), true);
+    }
+
+    private ArrayList<Offering> findOfferings(String keyword, boolean partialMatch) {
         ArrayList<Offering> matches = new ArrayList<>();
         for (Offering offering : offerings) {
-            if (keyword.isEmpty() || offering.getName().equalsIgnoreCase(keyword)) {
+            if (matchesName(offering.getName(), keyword, partialMatch)) {
                 matches.add(offering);
             }
         }
         return matches;
-    }
-
-    public List<Offering> findOfferingsByName(String name) {
-        return findByName(offerings, Offering::getName, name);
     }
 
     public void addQuote(Quote quote) {
@@ -171,7 +176,7 @@ public class DataStore {
         String keyword = clientName.trim();
         ArrayList<Quote> matches = new ArrayList<>();
         for (Quote quote : quotes) {
-            if (keyword.isEmpty() || quote.getClient().getName().equalsIgnoreCase(keyword)) {
+            if (matchesName(quote.getClient().getName(), keyword, false)) {
                 matches.add(quote);
             }
         }
@@ -214,15 +219,11 @@ public class DataStore {
         }
     }
 
-    private <T> List<T> findByName(List<T> records, Function<T, String> nameOf, String name) {
-        String keyword = name.strip().toLowerCase(Locale.ROOT);
-        List<T> matches = new ArrayList<>();
-        for (T record : records) {
-            if (nameOf.apply(record).toLowerCase(Locale.ROOT).contains(keyword)) {
-                matches.add(record);
-            }
+    private boolean matchesName(String name, String keyword, boolean partialMatch) {
+        if (partialMatch) {
+            return name.toLowerCase(Locale.ROOT).contains(keyword);
         }
-        return matches;
+        return keyword.isEmpty() || name.equalsIgnoreCase(keyword);
     }
 
     private int indexOfRecord(ArrayList<?> records, Object selected) {

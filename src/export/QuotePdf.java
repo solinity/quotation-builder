@@ -41,6 +41,8 @@ public final class QuotePdf {
     private static final int DISCOUNT_LEFT = 388;
     private static final int TOTAL_LEFT = 448;
     private static final int COLUMN_GAP = 6;
+    private static final int[] AMOUNT_COLUMNS = {QTY_LEFT, PRICE_LEFT, DISCOUNT_LEFT, TOTAL_LEFT, RIGHT};
+    private static final String[] AMOUNT_HEADINGS = {"Qty", "Unit price", "Disc.", "Line total"};
     private static final Charset PDF_CHARSET = Charset.forName("windows-1252");
 
     private final Quote quote;
@@ -116,10 +118,7 @@ public final class QuotePdf {
         fillBand(LEFT);
         drawText(page(), LEFT + 3, y, "No", FONT_SIZE, true);
         drawText(page(), OFFERING_LEFT, y, "Offering", FONT_SIZE, true);
-        drawRight("Qty", QTY_LEFT, PRICE_LEFT - COLUMN_GAP, true);
-        drawRight("Unit price", PRICE_LEFT, DISCOUNT_LEFT - COLUMN_GAP, true);
-        drawRight("Disc.", DISCOUNT_LEFT, TOTAL_LEFT - COLUMN_GAP, true);
-        drawRight("Line total", TOTAL_LEFT, RIGHT - COLUMN_GAP, true);
+        drawAmountColumns(AMOUNT_HEADINGS, true);
         y -= TABLE_HEADER_HEIGHT;
     }
 
@@ -135,10 +134,13 @@ public final class QuotePdf {
         ensureSpace(linesToReserve * LINE_HEIGHT + ITEM_GAP, true);
         drawRight(Integer.toString(number), LEFT, OFFERING_LEFT - COLUMN_GAP, false);
         drawText(page(), OFFERING_LEFT, y, name.get(0), FONT_SIZE, true);
-        drawRight(number(item.getQuantity()), QTY_LEFT, PRICE_LEFT - COLUMN_GAP, false);
-        drawRight(currency.format(item.getUnitPrice()), PRICE_LEFT, DISCOUNT_LEFT - COLUMN_GAP, false);
-        drawRight(number(item.getDiscountPercent()) + "%", DISCOUNT_LEFT, TOTAL_LEFT - COLUMN_GAP, false);
-        drawRight(currency.format(item.getLineTotal()), TOTAL_LEFT, RIGHT - COLUMN_GAP, false);
+        String[] amounts = {
+            number(item.getQuantity()),
+            currency.format(item.getUnitPrice()),
+            number(item.getDiscountPercent()) + "%",
+            currency.format(item.getLineTotal())
+        };
+        drawAmountColumns(amounts, false);
         y -= LINE_HEIGHT;
         for (int i = 1; i < name.size(); i++) {
             addItemLine(name.get(i), number, FONT_SIZE, true);
@@ -192,6 +194,12 @@ public final class QuotePdf {
 
     private StringBuilder page() {
         return pages.get(pages.size() - 1);
+    }
+
+    private void drawAmountColumns(String[] values, boolean bold) {
+        for (int i = 0; i < values.length; i++) {
+            drawRight(values[i], AMOUNT_COLUMNS[i], AMOUNT_COLUMNS[i + 1] - COLUMN_GAP, bold);
+        }
     }
 
     private void drawRight(String text, int left, int right, boolean bold) {
@@ -275,9 +283,9 @@ public final class QuotePdf {
 
         // Write header, every object (remembering where each starts), then the xref table.
         StringBuilder file = new StringBuilder("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n");
-        List<Integer> starts = new ArrayList<>();
+        int[] starts = new int[objects.size()];
         for (int i = 0; i < objects.size(); i++) {
-            starts.add(file.length());
+            starts[i] = file.length();
             file.append(i + 1).append(" 0 obj\n").append(objects.get(i)).append("\nendobj\n");
         }
         int xrefStart = file.length();

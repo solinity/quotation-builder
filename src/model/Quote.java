@@ -8,7 +8,9 @@ import java.util.List;
 public class Quote implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    public enum Status { DRAFT, SENT, ACCEPTED, REJECTED }
+    public enum Status {
+        DRAFT, SENT, ACCEPTED, REJECTED
+    }
 
     private Client client;
     private LocalDate date;
@@ -54,10 +56,21 @@ public class Quote implements Serializable {
         return getSubtotal() * (1 - discountPercent / 100.0);
     }
 
-    public Client getClient()          { return client; }
-    public LocalDate getDate()         { return date; }
-    public Status getStatus()          { return status; }
-    public double getDiscountPercent() { return discountPercent; }
+    public Client getClient() {
+        return client;
+    }
+
+    public LocalDate getDate() {
+        return date;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public double getDiscountPercent() {
+        return discountPercent;
+    }
 
     public void setClient(Client client) {
         if (client == null) {

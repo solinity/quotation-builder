@@ -27,12 +27,6 @@ public class ClientsPanel extends JPanel {
     private final JLabel listStatus = new JLabel();
     private String activeSearch = "";
 
-    private final JButton btnAddClient = new JButton("Add Client");
-    private final JButton btnSearch = new JButton("Search");
-    private final JButton btnShowAll = new JButton("Show All");
-    private final JButton btnUpdate = new JButton("Update");
-    private final JButton btnDelete = new JButton("Delete");
-
     private final DefaultListModel<Client> clientListModel = new DefaultListModel<>();
     private final JList<Client> clientList = new JList<>(clientListModel);
 
@@ -74,6 +68,9 @@ public class ClientsPanel extends JPanel {
 
     private JPanel createButtonPanel() {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
+        JButton btnAddClient = new JButton("Add Client");
+        JButton btnUpdate = new JButton("Update");
+        JButton btnDelete = new JButton("Delete");
         JButton clear = new JButton("Clear Form");
 
         btnAddClient.addActionListener(event -> addClient());
@@ -91,6 +88,8 @@ public class ClientsPanel extends JPanel {
 
     private JPanel createListPanel() {
         JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
+        JButton btnSearch = new JButton("Search");
+        JButton btnShowAll = new JButton("Show All");
         JLabel searchLabel = new JLabel("Search by name");
         searchLabel.setLabelFor(txtSearch);
         searchPanel.add(searchLabel);
@@ -110,21 +109,13 @@ public class ClientsPanel extends JPanel {
     }
 
     private void addClient() {
-        String name = txtName.getText();
-        String email = txtEmail.getText();
-        String phone = txtPhone.getText();
-
-        Client client;
         try {
-            client = new Client(name, email, phone);
+            dataStore.addClient(readClientForm());
+            showAllClients();
+            clearClientForm();
         } catch (IllegalArgumentException error) {
-            JOptionPane.showMessageDialog(this, error.getMessage(), "Invalid Client", JOptionPane.ERROR_MESSAGE);
-            return;
+            showInvalidClient(error.getMessage());
         }
-
-        dataStore.addClient(client);
-        showAllClients();
-        clearClientForm();
     }
 
     private void searchClients() {
@@ -153,23 +144,24 @@ public class ClientsPanel extends JPanel {
             return;
         }
 
-        String name = txtName.getText();
-        String email = txtEmail.getText();
-        String phone = txtPhone.getText();
-
-        Client validatedClient;
         try {
-            validatedClient = new Client(name, email, phone);
+            Client validatedClient = readClientForm();
+            selectedClient.setName(validatedClient.getName());
+            selectedClient.setEmail(validatedClient.getEmail());
+            selectedClient.setPhone(validatedClient.getPhone());
+            showAllClients();
+            clientList.setSelectedValue(selectedClient, true);
         } catch (IllegalArgumentException error) {
-            JOptionPane.showMessageDialog(this, error.getMessage(), "Invalid Client", JOptionPane.ERROR_MESSAGE);
-            return;
+            showInvalidClient(error.getMessage());
         }
+    }
 
-        selectedClient.setName(validatedClient.getName());
-        selectedClient.setEmail(validatedClient.getEmail());
-        selectedClient.setPhone(validatedClient.getPhone());
-        showAllClients();
-        clientList.setSelectedValue(selectedClient, true);
+    private Client readClientForm() {
+        return new Client(txtName.getText(), txtEmail.getText(), txtPhone.getText());
+    }
+
+    private void showInvalidClient(String message) {
+        JOptionPane.showMessageDialog(this, message, "Invalid Client", JOptionPane.ERROR_MESSAGE);
     }
 
     private void deleteClient() {
@@ -204,7 +196,7 @@ public class ClientsPanel extends JPanel {
         showAllClients();
     }
 
-    void refreshClientList() {
+    private void refreshClientList() {
         Client selected = clientList.getSelectedValue();
         clientListModel.clear();
         for (Client client : dataStore.searchClients(activeSearch)) {

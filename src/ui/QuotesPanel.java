@@ -5,13 +5,10 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -118,12 +115,32 @@ public class QuotesPanel extends JPanel {
     }
 
     private JPanel createEditorPanel() {
+        JPanel top = new JPanel(new BorderLayout(0, 6));
+        top.add(editorMode, BorderLayout.NORTH);
+        top.add(createQuoteFields(), BorderLayout.CENTER);
+
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.add(createTotalsPanel(), BorderLayout.NORTH);
+        bottom.add(createEditorButtons(), BorderLayout.SOUTH);
+
+        JPanel editor = new JPanel(new BorderLayout(0, 8));
+        editor.setBorder(BorderFactory.createTitledBorder("Quotation editor"));
+        editor.add(top, BorderLayout.NORTH);
+        editor.add(createItemsPanel(), BorderLayout.CENTER);
+        editor.add(bottom, BorderLayout.SOUTH);
+        return editor;
+    }
+
+    private FormPanel createQuoteFields() {
         FormPanel fields = new FormPanel();
         fields.addField("Client", clientSearch);
         fields.addField("Date (YYYY-MM-DD)", dateField);
         fields.addField("Status", statusChoices);
         fields.addField("Discount (%)", discountField);
+        return fields;
+    }
 
+    private JPanel createItemsPanel() {
         FormPanel itemFields = new FormPanel();
         itemFields.addField("Offering", offeringSearch);
         itemFields.addField("Quantity / hours", quantityField);
@@ -142,14 +159,20 @@ public class QuotesPanel extends JPanel {
         itemEditor.add(itemFields, BorderLayout.NORTH);
         itemEditor.add(new JScrollPane(itemList), BorderLayout.CENTER);
         itemEditor.add(itemButtons, BorderLayout.SOUTH);
+        return itemEditor;
+    }
 
+    private JPanel createTotalsPanel() {
         JPanel totals = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         JButton calculate = new JButton("Calculate");
         calculate.addActionListener(event -> calculate());
         totals.add(calculate);
         totals.add(subtotalLabel);
         totals.add(totalLabel);
+        return totals;
+    }
 
+    private JPanel createEditorButtons() {
         JPanel editorButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
         JButton create = new JButton("New Quote");
         JButton save = new JButton("Save Quote");
@@ -157,21 +180,7 @@ public class QuotesPanel extends JPanel {
         save.addActionListener(event -> saveQuote());
         editorButtons.add(create);
         editorButtons.add(save);
-
-        JPanel top = new JPanel(new BorderLayout(0, 6));
-        top.add(editorMode, BorderLayout.NORTH);
-        top.add(fields, BorderLayout.CENTER);
-
-        JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(totals, BorderLayout.NORTH);
-        bottom.add(editorButtons, BorderLayout.SOUTH);
-
-        JPanel editor = new JPanel(new BorderLayout(0, 8));
-        editor.setBorder(BorderFactory.createTitledBorder("Quotation editor"));
-        editor.add(top, BorderLayout.NORTH);
-        editor.add(itemEditor, BorderLayout.CENTER);
-        editor.add(bottom, BorderLayout.SOUTH);
-        return editor;
+        return editorButtons;
     }
 
     void refreshFromStore() {
@@ -201,8 +210,7 @@ public class QuotesPanel extends JPanel {
             QuoteItem item = new QuoteItem(offering, quantity, offering.getUnitPrice(), discount);
             getDraft().addItem(item);
             itemModel.addElement(item);
-            quantityField.setText("");
-            itemDiscountField.setText("0");
+            clearItemFields();
             showTotals();
         } catch (IllegalArgumentException error) {
             showError(error.getMessage());
@@ -283,17 +291,14 @@ public class QuotesPanel extends JPanel {
             return;
         }
         int number = dataStore.getQuoteNumber(selected);
-        Path target = choosePdfFile(number);
-        if (target == null) {
+        Path selectedFile = FileDialogs.choose(this, "Export Quotation as PDF", FileDialog.SAVE,
+                null, "quotation-" + number + ".pdf");
+        if (selectedFile == null) {
             return;
         }
-        if (!target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
-            target = target.resolveSibling(target.getFileName() + ".pdf");
-            if (Files.exists(target) && JOptionPane.showConfirmDialog(this,
-                    "Replace the existing PDF file?\n" + target, "Export PDF",
-                    JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
-                return;
-            }
+        Path target = FileDialogs.addExtension(this, selectedFile, ".pdf", "Export PDF");
+        if (target == null) {
+            return;
         }
 
         try {
@@ -305,52 +310,47 @@ public class QuotesPanel extends JPanel {
         }
     }
 
-    private Path choosePdfFile(int number) {
-        FileDialog dialog = new FileDialog(JOptionPane.getFrameForComponent(this), "Export Quotation as PDF", FileDialog.SAVE);
-        try {
-            dialog.setFile("quotation-" + number + ".pdf");
-            dialog.setVisible(true);
-            File[] files = dialog.getFiles();
-            return files.length == 0 ? null : files[0].toPath().toAbsolutePath().normalize();
-        } finally {
-            dialog.dispose();
-        }
-    }
-
     private void loadQuote(Quote quote) {
         editingQuote = quote;
         draft = new Quote(quote.getClient());
         draft.updateFrom(quote);
 
-        clientSearch.setSelectedRecord(draft.getClient());
-        offeringSearch.setSelectedRecord(null);
-        dateField.setText(draft.getDate().toString());
-        statusChoices.setSelectedItem(draft.getStatus());
-        discountField.setText(Double.toString(draft.getDiscountPercent()));
-        quantityField.setText("");
-        itemDiscountField.setText("0");
-        itemModel.clear();
-        for (QuoteItem item : draft.getItems()) {
-            itemModel.addElement(item);
-        }
-        refreshEditorMode();
-        showTotals();
+        populateEditor();
     }
 
     private void newQuote() {
         editingQuote = null;
         draft = null;
         quoteList.clearSelection();
-        clientSearch.setSelectedRecord(null);
+        populateEditor();
+    }
+
+    private void populateEditor() {
         offeringSearch.setSelectedRecord(null);
-        dateField.setText(LocalDate.now().toString());
-        statusChoices.setSelectedItem(Quote.Status.DRAFT);
-        discountField.setText("0");
-        quantityField.setText("");
-        itemDiscountField.setText("0");
+        clearItemFields();
         itemModel.clear();
+
+        if (draft == null) {
+            clientSearch.setSelectedRecord(null);
+            dateField.setText(LocalDate.now().toString());
+            statusChoices.setSelectedItem(Quote.Status.DRAFT);
+            discountField.setText("0");
+        } else {
+            clientSearch.setSelectedRecord(draft.getClient());
+            dateField.setText(draft.getDate().toString());
+            statusChoices.setSelectedItem(draft.getStatus());
+            discountField.setText(Double.toString(draft.getDiscountPercent()));
+            for (QuoteItem item : draft.getItems()) {
+                itemModel.addElement(item);
+            }
+        }
         refreshEditorMode();
         showTotals();
+    }
+
+    private void clearItemFields() {
+        quantityField.setText("");
+        itemDiscountField.setText("0");
     }
 
     void resetForSession() {

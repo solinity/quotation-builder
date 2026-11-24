@@ -227,7 +227,7 @@ public class OfferingsPanel extends JPanel {
         offeringList.repaint();
     }
 
-    void refreshOfferingList() {
+    private void refreshOfferingList() {
         Offering selected = offeringList.getSelectedValue();
         offeringModel.clear();
         for (Offering offering : dataStore.searchOfferings(activeSearch)) {
