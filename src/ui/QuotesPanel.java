@@ -1,10 +1,17 @@
 package ui;
 
+import export.QuotePdf;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.FileDialog;
 import java.awt.FlowLayout;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -87,15 +94,18 @@ public class QuotesPanel extends JPanel {
         searchButtons.add(results);
         searchBar.add(searchButtons, BorderLayout.SOUTH);
 
-        JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
+        JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 3));
         JButton open = new JButton("Open");
         JButton edit = new JButton("Edit");
+        JButton export = new JButton("Export PDF");
         JButton delete = new JButton("Delete Quote");
         open.addActionListener(event -> openQuote());
         edit.addActionListener(event -> editQuote());
+        export.addActionListener(event -> exportPdf());
         delete.addActionListener(event -> deleteQuote());
         recordButtons.add(open);
         recordButtons.add(edit);
+        recordButtons.add(export);
         recordButtons.add(delete);
 
         JPanel saved = new JPanel(new BorderLayout(0, 5));
@@ -264,6 +274,47 @@ public class QuotesPanel extends JPanel {
             return;
         }
         loadQuote(selected);
+    }
+
+    private void exportPdf() {
+        Quote selected = quoteList.getSelectedValue();
+        if (selected == null) {
+            showError("Select a saved quotation to export.");
+            return;
+        }
+        int number = dataStore.getQuoteNumber(selected);
+        Path target = choosePdfFile(number);
+        if (target == null) {
+            return;
+        }
+        if (!target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
+            target = target.resolveSibling(target.getFileName() + ".pdf");
+            if (Files.exists(target) && JOptionPane.showConfirmDialog(this,
+                    "Replace the existing PDF file?\n" + target, "Export PDF",
+                    JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+
+        try {
+            QuotePdf.write(target, selected, number, dataStore.getCurrencySettings());
+            JOptionPane.showMessageDialog(this, "PDF saved to\n" + target, "Export PDF",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException error) {
+            showError("Could not write the PDF. " + error.getMessage());
+        }
+    }
+
+    private Path choosePdfFile(int number) {
+        FileDialog dialog = new FileDialog(JOptionPane.getFrameForComponent(this), "Export Quotation as PDF", FileDialog.SAVE);
+        try {
+            dialog.setFile("quotation-" + number + ".pdf");
+            dialog.setVisible(true);
+            File[] files = dialog.getFiles();
+            return files.length == 0 ? null : files[0].toPath().toAbsolutePath().normalize();
+        } finally {
+            dialog.dispose();
+        }
     }
 
     private void loadQuote(Quote quote) {

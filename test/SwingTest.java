@@ -166,6 +166,7 @@ public class SwingTest {
         JComboBox<?> statuses = combo(quotes, "Status");
         expectError(quotes, "Open", "Select a saved quotation");
         expectError(quotes, "Edit", "Select a saved quotation");
+        expectError(quotes, "Export PDF", "Select a saved quotation");
         expectError(quotes, "Delete Quote", "Select a saved quotation");
         expectError(quotes, "Remove Item", "Select a quotation item");
         expectError(quotes, "Add Item", "Select an offering");

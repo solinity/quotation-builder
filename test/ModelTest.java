@@ -1,5 +1,7 @@
+import export.QuotePdf;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -25,7 +27,8 @@ public class ModelTest {
         testCalculations();
         testSavedQuotes();
         testSessionDatabase();
-        System.out.println("Model and data store tests passed (5 groups).");
+        testQuotePdf();
+        System.out.println("Model, data store, and export tests passed (6 groups).");
     }
 
     private static void testClients() {
@@ -303,6 +306,30 @@ public class ModelTest {
             Files.deleteIfExists(directory);
         }
         System.out.println("PASS SQLite session round trip, rollback, and legacy import");
+    }
+
+    private static void testQuotePdf() throws IOException {
+        Client client = new Client("Luc\u00eda Ben\u00edtez", "lucia@example.com", "555-0124");
+        Offering offering = new Offering("Consultor\u00eda (Asunci\u00f3n)",
+                "Detalle de revisi\u00f3n\n".repeat(65) + "Fin de la descripci\u00f3n.", 200);
+        Quote quote = new Quote(client);
+        quote.setDiscountPercent(10);
+        quote.addItem(new QuoteItem(offering, 2, 100, 25));
+        CurrencySettings currency = new CurrencySettings(SessionCurrency.USD, SessionCurrency.PYG, new BigDecimal("7500"));
+        Path file = Files.createTempFile("quotation-export-test-", ".pdf");
+        try {
+            QuotePdf.write(file, quote, 12, currency);
+            String pdf = Files.readString(file, StandardCharsets.ISO_8859_1);
+            check(pdf.startsWith("%PDF-1.4") && pdf.contains("QUOTATION #12") && pdf.contains(client.getName()),
+                    "export writes a quotation PDF with the customer details");
+            check(pdf.contains("Page 2 / ") && pdf.contains("Fin de la descripci\u00f3n."),
+                    "export keeps long descriptions across pages");
+            check(pdf.contains("PYG 750.000") && pdf.contains("PYG 1.125.000") && pdf.contains("PYG 1.012.500"),
+                    "export converts saved prices, discounts, and totals to the selected currency");
+        } finally {
+            Files.deleteIfExists(file);
+        }
+        System.out.println("PASS quotation PDF export, currency, and pagination");
     }
 
     private static void rejectsFileOperation(FileOperation operation, String description) {
