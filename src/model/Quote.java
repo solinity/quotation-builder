@@ -16,14 +16,17 @@ public class Quote implements Serializable {
     private LocalDate date;
     private Status status;
     private double discountPercent;
-    private ArrayList<QuoteItem> items;
+    private ArrayList<QuoteItem> items = new ArrayList<>();
 
     public Quote(Client client) {
+        this(client, LocalDate.now(), Status.DRAFT, 0);
+    }
+
+    public Quote(Client client, LocalDate date, Status status, double discountPercent) {
         setClient(client);
-        this.date = LocalDate.now();
-        this.status = Status.DRAFT;
-        this.discountPercent = 0;
-        this.items = new ArrayList<>();
+        setDate(date);
+        setStatus(status);
+        setDiscountPercent(discountPercent);
     }
 
     public void addItem(QuoteItem item) {
@@ -108,8 +111,13 @@ public class Quote implements Serializable {
         date = source.date;
         status = source.status;
         discountPercent = source.discountPercent;
-        // QuoteItems are immutable. Each quote owns its own list.
         items = new ArrayList<>(source.items);
+    }
+
+    public Quote copy() {
+        Quote copy = new Quote(client);
+        copy.updateFrom(this);
+        return copy;
     }
 
     @Override

@@ -1,12 +1,11 @@
 package ui;
 
-import static ui.SwingSupport.button;
+import static ui.SwingSupport.*;
 
 import export.QuotePdf;
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Font;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -16,7 +15,6 @@ import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JEditorPane;
 import javax.swing.JLabel;
@@ -25,16 +23,11 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
-import javax.swing.KeyStroke;
-import javax.swing.ListSelectionModel;
-import javax.swing.SwingUtilities;
 import model.Client;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
 import storage.DataStore;
-import ui.SwingSupport.FormPanel;
-import ui.SwingSupport.RecordRenderer;
 
 public class QuotesPanel extends JPanel {
     private static final long serialVersionUID = 1L;
@@ -69,12 +62,8 @@ public class QuotesPanel extends JPanel {
         RecordRenderer renderer = new RecordRenderer(dataStore);
         clientSearch = new RecordSearchField<>(dataStore::findClientsByName, renderer);
         offeringSearch = new RecordSearchField<>(dataStore::findOfferingsByName, renderer);
-        itemList.setCellRenderer(renderer);
-        itemList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        itemList.getAccessibleContext().setAccessibleName("Quotation items");
-        quoteList.setCellRenderer(renderer);
-        quoteList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        quoteList.getAccessibleContext().setAccessibleName("Saved quotations");
+        configureList(itemList, renderer, "Quotation items");
+        configureList(quoteList, renderer, "Saved quotations");
 
         add(createSavedQuotesPanel(), BorderLayout.WEST);
         add(createEditorPanel(), BorderLayout.CENTER);
@@ -83,49 +72,22 @@ public class QuotesPanel extends JPanel {
     }
 
     private JPanel createSavedQuotesPanel() {
-        JPanel searchBar = new JPanel(new BorderLayout(0, 3));
-        JLabel searchLabel = new JLabel("Search by client name");
-        searchLabel.setLabelFor(searchField);
-        searchBar.add(searchLabel, BorderLayout.NORTH);
-        searchBar.add(searchField, BorderLayout.CENTER);
-
-        JPanel searchButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
         searchField.addActionListener(event -> searchQuotes());
-        searchButtons.add(button("Search", event -> searchQuotes()));
-        searchButtons.add(button("Show All", event -> showAllQuotes()));
-        searchButtons.add(results);
-        searchBar.add(searchButtons, BorderLayout.SOUTH);
-
-        JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 3, 3));
-        recordButtons.add(button("Open", event -> openQuote()));
-        recordButtons.add(button("Edit", event -> editQuote()));
-        recordButtons.add(button("Export PDF", event -> exportPdf()));
-        recordButtons.add(button("Delete Quote", event -> deleteQuote()));
-
-        JPanel saved = new JPanel(new BorderLayout(0, 5));
-        saved.setBorder(BorderFactory.createTitledBorder("Saved quotations"));
+        JPanel searchBar = borderPanel(null, 3, labelFor("Search by client name", searchField), searchField,
+                row(6, 3, button("Search", event -> searchQuotes()), button("Show All", event -> showAllQuotes()), results));
+        JPanel recordButtons = row(3, 3, quoteButton("Open", this::openQuote),
+                quoteButton("Edit", () -> loadQuote(selectedQuote("edit"))),
+                quoteButton("Export PDF", this::exportPdf), quoteButton("Delete Quote", this::deleteQuote));
+        JPanel saved = borderPanel("Saved quotations", 5, searchBar, new JScrollPane(quoteList), recordButtons);
         saved.setPreferredSize(new Dimension(355, 400));
-        saved.add(searchBar, BorderLayout.NORTH);
-        saved.add(new JScrollPane(quoteList), BorderLayout.CENTER);
-        saved.add(recordButtons, BorderLayout.SOUTH);
         return saved;
     }
 
     private JPanel createEditorPanel() {
-        JPanel top = new JPanel(new BorderLayout(0, 6));
-        top.add(editorMode, BorderLayout.NORTH);
-        top.add(createQuoteFields(), BorderLayout.CENTER);
-
-        JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(createTotalsPanel(), BorderLayout.NORTH);
-        bottom.add(createEditorButtons(), BorderLayout.SOUTH);
-
-        JPanel editor = new JPanel(new BorderLayout(0, 8));
-        editor.setBorder(BorderFactory.createTitledBorder("Quotation editor"));
-        editor.add(top, BorderLayout.NORTH);
-        editor.add(createItemsPanel(), BorderLayout.CENTER);
-        editor.add(bottom, BorderLayout.SOUTH);
-        return editor;
+        JPanel top = borderPanel(null, 6, editorMode, createQuoteFields(), null);
+        JPanel totals = row(8, 4, quoteButton("Calculate", this::calculate), subtotalLabel, totalLabel);
+        JPanel actions = row(6, 3, button("New Quote", event -> newQuote()), quoteButton("Save Quote", this::saveQuote));
+        return borderPanel("Quotation editor", 8, top, createItemsPanel(), borderPanel(null, 0, totals, null, actions));
     }
 
     private FormPanel createQuoteFields() {
@@ -143,31 +105,8 @@ public class QuotesPanel extends JPanel {
         itemFields.addField("Quantity / hours", quantityField);
         itemFields.addField("Item discount (%)", itemDiscountField);
 
-        JPanel itemButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
-        itemButtons.add(button("Add Item", event -> addItem()));
-        itemButtons.add(button("Remove Item", event -> removeItem()));
-
-        JPanel itemEditor = new JPanel(new BorderLayout(0, 5));
-        itemEditor.setBorder(BorderFactory.createTitledBorder("Quotation items"));
-        itemEditor.add(itemFields, BorderLayout.NORTH);
-        itemEditor.add(new JScrollPane(itemList), BorderLayout.CENTER);
-        itemEditor.add(itemButtons, BorderLayout.SOUTH);
-        return itemEditor;
-    }
-
-    private JPanel createTotalsPanel() {
-        JPanel totals = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        totals.add(button("Calculate", event -> calculate()));
-        totals.add(subtotalLabel);
-        totals.add(totalLabel);
-        return totals;
-    }
-
-    private JPanel createEditorButtons() {
-        JPanel editorButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
-        editorButtons.add(button("New Quote", event -> newQuote()));
-        editorButtons.add(button("Save Quote", event -> saveQuote()));
-        return editorButtons;
+        JPanel itemButtons = row(6, 3, quoteButton("Add Item", this::addItem), quoteButton("Remove Item", this::removeItem));
+        return borderPanel("Quotation items", 5, itemFields, new JScrollPane(itemList), itemButtons);
     }
 
     void refreshFromStore() {
@@ -187,28 +126,23 @@ public class QuotesPanel extends JPanel {
     }
 
     private void addItem() {
-        try {
-            Offering offering = offeringSearch.getSelectedRecord();
-            if (offering == null) {
-                throw new IllegalArgumentException("Select an offering from the search results. Add one in Offerings if needed.");
-            }
-            double quantity = readNumber(quantityField, "quantity");
-            double discount = itemDiscountField.getText().isBlank() ? 0 : readNumber(itemDiscountField, "item discount");
-            QuoteItem item = new QuoteItem(offering, quantity, offering.getUnitPrice(), discount);
-            getDraft().addItem(item);
-            itemModel.addElement(item);
-            clearItemFields();
-            showTotals();
-        } catch (IllegalArgumentException error) {
-            showError(error.getMessage());
+        Offering offering = offeringSearch.getSelectedRecord();
+        if (offering == null) {
+            throw new IllegalArgumentException("Select an offering from the search results. Add one in Offerings if needed.");
         }
+        double quantity = readNumber(quantityField, "quantity");
+        double discount = itemDiscountField.getText().isBlank() ? 0 : readNumber(itemDiscountField, "item discount");
+        QuoteItem item = new QuoteItem(offering, quantity, offering.getUnitPrice(), discount);
+        getDraft().addItem(item);
+        itemModel.addElement(item);
+        clearItemFields();
+        showTotals();
     }
 
     private void removeItem() {
         QuoteItem item = itemList.getSelectedValue();
         if (item == null) {
-            showError("Select a quotation item to remove.");
-            return;
+            throw new IllegalArgumentException("Select a quotation item to remove.");
         }
         draft.removeItem(item);
         itemModel.removeElement(item);
@@ -216,47 +150,31 @@ public class QuotesPanel extends JPanel {
     }
 
     private void calculate() {
-        try {
-            double discount = readNumber(discountField, "discount");
-            getDraft().setDiscountPercent(discount);
-            showTotals();
-        } catch (IllegalArgumentException error) {
-            showError(error.getMessage());
-        }
+        double discount = readNumber(discountField, "discount");
+        getDraft().setDiscountPercent(discount);
+        showTotals();
     }
 
     private void saveQuote() {
-        try {
-            Client client = selectedClient();
-            Quote changes = new Quote(client);
-            if (draft != null) {
-                changes.updateFrom(draft);
-                changes.setClient(client);
-            }
-            changes.setDate(readDate());
-            changes.setStatus((Quote.Status) statusChoices.getSelectedItem());
-            changes.setDiscountPercent(readNumber(discountField, "discount"));
-
-            if (editingQuote == null) {
-                dataStore.addQuote(changes);
-                editingQuote = changes;
-            } else {
-                dataStore.updateQuote(editingQuote, changes);
-            }
-            showAllQuotes();
-            quoteList.setSelectedValue(editingQuote, true);
-            loadQuote(editingQuote);
-        } catch (IllegalArgumentException error) {
-            showError(error.getMessage());
+        Client client = selectedClient();
+        Quote changes = draft == null ? new Quote(client) : draft.copy();
+        changes.setClient(client);
+        changes.setDate(readDate());
+        changes.setStatus((Quote.Status) statusChoices.getSelectedItem());
+        changes.setDiscountPercent(readNumber(discountField, "discount"));
+        if (editingQuote == null) {
+            dataStore.addQuote(changes);
+            editingQuote = changes;
+        } else {
+            dataStore.updateQuote(editingQuote, changes);
         }
+        showAllQuotes();
+        quoteList.setSelectedValue(editingQuote, true);
+        loadQuote(editingQuote);
     }
 
     private void openQuote() {
         Quote selected = selectedQuote("open");
-        if (selected == null) {
-            return;
-        }
-
         int number = dataStore.getQuoteNumber(selected);
         JEditorPane document = new JEditorPane("text/plain",
                 QuotePdf.preview(selected, number, dataStore.getCurrencySettings()));
@@ -266,35 +184,22 @@ public class QuotesPanel extends JPanel {
         document.setBorder(BorderFactory.createEmptyBorder(18, 24, 20, 24));
         document.setCaretPosition(0);
 
-        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), "Quotation #" + number,
-                Dialog.ModalityType.DOCUMENT_MODAL);
-        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-        dialog.add(new JScrollPane(document), BorderLayout.CENTER);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 7));
-        JButton close = button("Close", event -> dialog.dispose());
-        buttons.add(close);
-        dialog.add(buttons, BorderLayout.SOUTH);
-        dialog.getRootPane().setDefaultButton(close);
-        dialog.getRootPane().registerKeyboardAction(event -> dialog.dispose(), KeyStroke.getKeyStroke("ESCAPE"),
-                JComponent.WHEN_IN_FOCUSED_WINDOW);
+        JOptionPane preview = new JOptionPane(new JScrollPane(document), JOptionPane.PLAIN_MESSAGE,
+                JOptionPane.DEFAULT_OPTION, null, new String[] {"Close"}, "Close");
+        JDialog dialog = preview.createDialog(this, "Quotation #" + number);
+        dialog.setModalityType(Dialog.ModalityType.DOCUMENT_MODAL);
         dialog.setMinimumSize(new Dimension(620, 360));
         dialog.setSize(820, 560);
         dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
-    }
-
-    private void editQuote() {
-        Quote selected = selectedQuote("edit");
-        if (selected != null) {
-            loadQuote(selected);
+        try {
+            dialog.setVisible(true);
+        } finally {
+            dialog.dispose();
         }
     }
 
     private void exportPdf() {
         Quote selected = selectedQuote("export");
-        if (selected == null) {
-            return;
-        }
         int number = dataStore.getQuoteNumber(selected);
         Path target = SwingSupport.saveAs(this, "Export Quotation as PDF", null, "quotation-" + number + ".pdf", ".pdf");
         if (target == null) {
@@ -306,49 +211,43 @@ public class QuotesPanel extends JPanel {
             JOptionPane.showMessageDialog(this, "PDF saved to\n" + target, "Export PDF",
                     JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException error) {
-            showError("Could not write the PDF. " + error.getMessage());
+            JOptionPane.showMessageDialog(this, "Could not write the PDF. " + error.getMessage(), "Quotation",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private Quote selectedQuote(String action) {
         Quote selected = quoteList.getSelectedValue();
         if (selected == null) {
-            showError("Select a saved quotation to " + action + ".");
+            throw new IllegalArgumentException("Select a saved quotation to " + action + ".");
         }
         return selected;
     }
 
+    private void newQuote() {
+        quoteList.clearSelection();
+        loadQuote(null);
+    }
+
     private void loadQuote(Quote quote) {
         editingQuote = quote;
-        draft = new Quote(quote.getClient());
-        draft.updateFrom(quote);
-
-        populateEditor();
-    }
-
-    private void newQuote() {
-        editingQuote = null;
-        draft = null;
-        quoteList.clearSelection();
-        populateEditor();
-    }
-
-    private void populateEditor() {
         offeringSearch.setSelectedRecord(null);
         clearItemFields();
         itemModel.clear();
 
-        if (draft == null) {
+        if (quote == null) {
+            draft = null;
             clientSearch.setSelectedRecord(null);
             dateField.setText(LocalDate.now().toString());
             statusChoices.setSelectedItem(Quote.Status.DRAFT);
             discountField.setText("0");
         } else {
-            clientSearch.setSelectedRecord(draft.getClient());
-            dateField.setText(draft.getDate().toString());
-            statusChoices.setSelectedItem(draft.getStatus());
-            discountField.setText(Double.toString(draft.getDiscountPercent()));
-            itemModel.addAll(draft.getItems());
+            draft = quote.copy();
+            clientSearch.setSelectedRecord(quote.getClient());
+            dateField.setText(quote.getDate().toString());
+            statusChoices.setSelectedItem(quote.getStatus());
+            discountField.setText(Double.toString(quote.getDiscountPercent()));
+            itemModel.addAll(quote.getItems());
         }
         refreshEditorMode();
         showTotals();
@@ -365,10 +264,9 @@ public class QuotesPanel extends JPanel {
     }
 
     private void deleteQuote() {
-        Quote selected = quoteList.getSelectedValue();
-        if (selected == null || !dataStore.removeQuote(selected)) {
-            showError("Select a saved quotation to delete.");
-            return;
+        Quote selected = selectedQuote("delete");
+        if (!dataStore.removeQuote(selected)) {
+            throw new IllegalArgumentException("Select a saved quotation to delete.");
         }
         if (selected == editingQuote) {
             newQuote();
@@ -381,8 +279,6 @@ public class QuotesPanel extends JPanel {
         Client client = selectedClient();
         if (draft == null) {
             draft = new Quote(client);
-        } else {
-            draft.setClient(client);
         }
         return draft;
     }
@@ -432,9 +328,7 @@ public class QuotesPanel extends JPanel {
     private void refreshQuoteList() {
         Quote selected = quoteList.getSelectedValue();
         quoteModel.clear();
-        for (Quote quote : dataStore.searchQuotes(activeSearch)) {
-            quoteModel.addElement(quote);
-        }
+        quoteModel.addAll(dataStore.searchQuotes(activeSearch));
         quoteList.setSelectedValue(selected, true);
         results.setText(quoteModel.isEmpty() ? "No quotations found." : quoteModel.size() + " shown");
     }
@@ -444,7 +338,7 @@ public class QuotesPanel extends JPanel {
                 : "Editing quotation #" + dataStore.getQuoteNumber(editingQuote));
     }
 
-    private void showError(String message) {
-        JOptionPane.showMessageDialog(this, message, "Quotation", JOptionPane.ERROR_MESSAGE);
+    private JButton quoteButton(String text, Runnable action) {
+        return formButton(text, this, "Quotation", action);
     }
 }

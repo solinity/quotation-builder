@@ -1,10 +1,9 @@
 package ui;
 
-import static ui.SwingSupport.button;
+import static ui.SwingSupport.*;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -24,17 +23,14 @@ import model.CurrencySettings;
 import model.CurrencySettings.SessionCurrency;
 import storage.DataStore;
 import storage.SessionDatabase;
-import ui.CatalogPanel.ClientsPanel;
-import ui.CatalogPanel.OfferingsPanel;
-import ui.SwingSupport.FormPanel;
 
 public class MainFrame extends JFrame {
     private static final long serialVersionUID = 1L;
     private static final String APP_TITLE = "Freelance Quotation Builder";
 
     private final DataStore dataStore;
-    private final ClientsPanel clients;
-    private final OfferingsPanel offerings;
+    private final CatalogPanel clients;
+    private final CatalogPanel offerings;
     private final QuotesPanel quotes;
     private final JComboBox<SessionCurrency> currencies = new JComboBox<>(SessionCurrency.values());
     private final JTextField rateField = new JTextField(12);
@@ -45,8 +41,8 @@ public class MainFrame extends JFrame {
         super(APP_TITLE);
 
         this.dataStore = dataStore;
-        clients = new ClientsPanel(dataStore);
-        offerings = new OfferingsPanel(dataStore);
+        clients = new CatalogPanel(dataStore, CatalogPanel.Type.CLIENT);
+        offerings = new CatalogPanel(dataStore, CatalogPanel.Type.OFFERING);
         quotes = new QuotesPanel(dataStore);
         setJMenuBar(createMenuBar());
 
@@ -70,8 +66,8 @@ public class MainFrame extends JFrame {
 
     private JMenuBar createMenuBar() {
         JMenu file = new JMenu("File");
-        file.add(menuItem("Save Session", event -> saveSession()));
-        file.add(menuItem("Save Session As...", event -> saveSessionAs()));
+        file.add(menuItem("Save Session", event -> saveSession(false)));
+        file.add(menuItem("Save Session As...", event -> saveSession(true)));
         file.addSeparator();
         file.add(menuItem("Load Session...", event -> openSession()));
 
@@ -96,16 +92,12 @@ public class MainFrame extends JFrame {
         form.addField("Guaran\u00edes per 1 USD", rateField);
         rateField.setToolTipText("Enter a rate such as 7500.50 using a period for decimals");
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
-        buttons.add(button("Apply", event -> applyCurrencySettings()));
-        JPanel settings = new JPanel(new BorderLayout(0, 8));
-        settings.setBorder(BorderFactory.createTitledBorder("Session settings"));
+        JPanel settings = borderPanel("Session settings", 8, null, null,
+                row(6, 3, button("Apply", event -> applyCurrencySettings())));
         settings.add(form, BorderLayout.WEST);
-        settings.add(buttons, BorderLayout.SOUTH);
 
-        JPanel tab = new JPanel(new BorderLayout());
+        JPanel tab = borderPanel(null, 0, settings, null, null);
         tab.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        tab.add(settings, BorderLayout.NORTH);
         refreshCurrencySettings();
         currencies.addActionListener(event -> applyCurrencySettings());
         rateField.addActionListener(event -> applyCurrencySettings());
@@ -156,21 +148,6 @@ public class MainFrame extends JFrame {
         return sessionFile == null ? null : sessionFile.getParent();
     }
 
-    private void openSession() {
-        Path selected = SwingSupport.openFile(this, "Load Session", sessionDirectory());
-        if (selected != null) {
-            loadSession(selected);
-        }
-    }
-
-    private void saveSession() {
-        if (sessionFile == null || SessionDatabase.isLegacySession(sessionFile)) {
-            saveSessionAs();
-        } else {
-            saveSession(sessionFile);
-        }
-    }
-
     private String suggestedSaveName() {
         if (sessionFile == null) {
             return "quotation-session" + SessionDatabase.EXTENSION;
@@ -182,24 +159,28 @@ public class MainFrame extends JFrame {
         return name;
     }
 
-    private void saveSessionAs() {
-        Path target = SwingSupport.saveAs(this, "Save Session As", sessionDirectory(),
-                suggestedSaveName(), SessionDatabase.EXTENSION);
-        if (target != null) {
-            saveSession(target);
+    private void saveSession(boolean chooseLocation) {
+        Path target = sessionFile;
+        if (chooseLocation || target == null || SessionDatabase.isLegacySession(target)) {
+            target = SwingSupport.saveAs(this, "Save Session As", sessionDirectory(),
+                    suggestedSaveName(), SessionDatabase.EXTENSION);
         }
-    }
-
-    private void saveSession(Path selected) {
+        if (target == null) {
+            return;
+        }
         try {
-            SessionDatabase.save(selected, dataStore);
-            setSessionFile(selected);
+            SessionDatabase.save(target, dataStore);
+            setSessionFile(target);
         } catch (IOException error) {
             JOptionPane.showMessageDialog(this, error.getMessage(), "Could Not Save Session", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private void loadSession(Path selected) {
+    private void openSession() {
+        Path selected = SwingSupport.openFile(this, "Load Session", sessionDirectory());
+        if (selected == null) {
+            return;
+        }
         try {
             DataStore loaded = SessionDatabase.load(selected);
             if ((dataStore.getClientCount() > 0 || dataStore.getOfferingCount() > 0 || dataStore.getQuoteCount() > 0)

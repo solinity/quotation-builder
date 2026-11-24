@@ -16,7 +16,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.DateTimeException;
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -66,8 +65,14 @@ public final class SessionDatabase {
             if (version >= 2) {
                 data.setCurrencySettings(readCurrencySettings(sql, version));
             }
-            Map<Long, Client> clients = readClients(sql, data);
-            Map<Long, Offering> offerings = readOfferings(sql, data);
+            // Resolve shared records by their database IDs, which may have gaps.
+            Map<Long, Client> clients = readRecords(sql, "SELECT id, name, email, phone FROM clients ORDER BY id",
+                    row -> new Client(row.getString("name"), row.getString("email"), row.getString("phone")));
+            Map<Long, Offering> offerings = readRecords(sql,
+                    "SELECT id, name, description, unit_price FROM offerings ORDER BY id",
+                    row -> new Offering(row.getString("name"), row.getString("description"), row.getDouble("unit_price")));
+            clients.values().forEach(data::addClient);
+            offerings.values().forEach(data::addOffering);
             readQuotes(sql, data, clients, offerings);
             database.commit();
             return data;
@@ -89,8 +94,7 @@ public final class SessionDatabase {
             try {
                 prepareTables(sql, newFile);
                 writeCurrencySettings(database, data.getCurrencySettings());
-                writeClients(database, data);
-                writeOfferings(database, data);
+                writeCatalogs(database, data);
                 writeQuotes(database, data);
                 database.commit();
             } catch (SQLException | IOException | RuntimeException error) {
@@ -206,22 +210,18 @@ public final class SessionDatabase {
         }
     }
 
-    private static void writeClients(Connection database, DataStore data) throws SQLException {
-        try (PreparedStatement insert = database.prepareStatement(
-                "INSERT INTO clients (id, name, email, phone) VALUES (?, ?, ?, ?)")) {
+    private static void writeCatalogs(Connection database, DataStore data) throws SQLException {
+        try (PreparedStatement insertClient = database.prepareStatement(
+                "INSERT INTO clients (id, name, email, phone) VALUES (?, ?, ?, ?)");
+                PreparedStatement insertOffering = database.prepareStatement(
+                    "INSERT INTO offerings (id, name, description, unit_price) VALUES (?, ?, ?, ?)")) {
             for (int i = 0; i < data.getClientCount(); i++) {
                 Client client = data.getClient(i);
-                saveRow(insert, i + 1, client.getName(), client.getEmail(), client.getPhone());
+                saveRow(insertClient, i + 1, client.getName(), client.getEmail(), client.getPhone());
             }
-        }
-    }
-
-    private static void writeOfferings(Connection database, DataStore data) throws SQLException {
-        try (PreparedStatement insert = database.prepareStatement(
-                "INSERT INTO offerings (id, name, description, unit_price) VALUES (?, ?, ?, ?)")) {
             for (int i = 0; i < data.getOfferingCount(); i++) {
                 Offering offering = data.getOffering(i);
-                saveRow(insert, i + 1, offering.getName(), offering.getDescription(), offering.getUnitPrice());
+                saveRow(insertOffering, i + 1, offering.getName(), offering.getDescription(), offering.getUnitPrice());
             }
         }
     }
@@ -258,45 +258,26 @@ public final class SessionDatabase {
         statement.executeUpdate();
     }
 
-    private static Map<Long, Client> readClients(Statement sql, DataStore data) throws SQLException {
-        // Quotation rows refer to database IDs, so each ID must resolve to the same Java object.
-        Map<Long, Client> clients = new HashMap<>();
-        try (ResultSet rows = sql.executeQuery("SELECT id, name, email, phone FROM clients ORDER BY id")) {
-            while (rows.next()) {
-                Client client = new Client(rows.getString("name"), rows.getString("email"), rows.getString("phone"));
-                data.addClient(client);
-                clients.put(rows.getLong("id"), client);
-            }
-        }
-        return clients;
+    private interface RecordReader<T> {
+        T read(ResultSet row) throws SQLException;
     }
 
-    private static Map<Long, Offering> readOfferings(Statement sql, DataStore data) throws SQLException {
-        Map<Long, Offering> offerings = new HashMap<>();
-        try (ResultSet rows = sql.executeQuery("SELECT id, name, description, unit_price FROM offerings ORDER BY id")) {
+    private static <T> Map<Long, T> readRecords(Statement sql, String query, RecordReader<T> reader) throws SQLException {
+        Map<Long, T> records = new LinkedHashMap<>();
+        try (ResultSet rows = sql.executeQuery(query)) {
             while (rows.next()) {
-                Offering offering = new Offering(rows.getString("name"), rows.getString("description"),
-                        rows.getDouble("unit_price"));
-                data.addOffering(offering);
-                offerings.put(rows.getLong("id"), offering);
+                records.put(rows.getLong("id"), reader.read(rows));
             }
         }
-        return offerings;
+        return records;
     }
 
     private static void readQuotes(Statement sql, DataStore data, Map<Long, Client> clients,
             Map<Long, Offering> offerings) throws SQLException, IOException {
-        Map<Long, Quote> quotes = new LinkedHashMap<>();
-        try (ResultSet rows = sql.executeQuery(
-                "SELECT id, client_id, quotation_date, status, discount_percent FROM quotations ORDER BY id")) {
-            while (rows.next()) {
-                Quote quote = new Quote(clients.get(rows.getLong("client_id")));
-                quote.setDate(LocalDate.parse(rows.getString("quotation_date")));
-                quote.setStatus(Quote.Status.valueOf(rows.getString("status")));
-                quote.setDiscountPercent(rows.getDouble("discount_percent"));
-                quotes.put(rows.getLong("id"), quote);
-            }
-        }
+        Map<Long, Quote> quotes = readRecords(sql,
+                "SELECT id, client_id, quotation_date, status, discount_percent FROM quotations ORDER BY id",
+                row -> new Quote(clients.get(row.getLong("client_id")), LocalDate.parse(row.getString("quotation_date")),
+                        Quote.Status.valueOf(row.getString("status")), row.getDouble("discount_percent")));
         try (ResultSet rows = sql.executeQuery(
                 "SELECT quotation_id, offering_id, quantity, unit_price, discount_percent"
                         + " FROM quotation_items ORDER BY quotation_id, line_number")) {
@@ -310,9 +291,7 @@ public final class SessionDatabase {
                         rows.getDouble("discount_percent")));
             }
         }
-        for (Quote quote : quotes.values()) {
-            data.addQuote(quote);
-        }
+        quotes.values().forEach(data::addQuote);
     }
 
     private static IOException databaseError(String operation, SQLException error) {
@@ -346,25 +325,18 @@ public final class SessionDatabase {
 
     private static DataStore readRecords(DataInputStream in) throws IOException {
         DataStore data = new DataStore();
-        int clientCount = readSize(in);
-        for (int i = 0; i < clientCount; i++) {
+        for (int remaining = readSize(in); remaining > 0; remaining--) {
             data.addClient(new Client(readText(in), readText(in), readText(in)));
         }
 
-        int offeringCount = readSize(in);
-        for (int i = 0; i < offeringCount; i++) {
+        for (int remaining = readSize(in); remaining > 0; remaining--) {
             data.addOffering(new Offering(readText(in), readText(in), in.readDouble()));
         }
 
-        int quoteCount = readSize(in);
-        for (int i = 0; i < quoteCount; i++) {
-            Quote quote = new Quote(data.getClient(in.readInt()));
-            quote.setDate(LocalDate.ofEpochDay(in.readLong()));
-            quote.setStatus(Quote.Status.valueOf(readText(in)));
-            quote.setDiscountPercent(in.readDouble());
-
-            int itemCount = readSize(in);
-            for (int j = 0; j < itemCount; j++) {
+        for (int remaining = readSize(in); remaining > 0; remaining--) {
+            Quote quote = new Quote(data.getClient(in.readInt()), LocalDate.ofEpochDay(in.readLong()),
+                    Quote.Status.valueOf(readText(in)), in.readDouble());
+            for (int items = readSize(in); items > 0; items--) {
                 Offering offering = data.getOffering(in.readInt());
                 quote.addItem(new QuoteItem(offering, in.readDouble(), in.readDouble(), in.readDouble()));
             }
