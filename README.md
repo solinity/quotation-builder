@@ -1,12 +1,24 @@
 # Freelance Quotation Builder
 
-Run the app from PowerShell with JDK 11 or newer on your PATH.
+## Run the app
+
+Install JDK 11 or newer and make sure `java` and `javac` are on your PATH. Run the command for your operating system from the project directory.
+
+### Windows
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
-The first run downloads the pinned SQLite JDBC driver into `lib`. Later runs use the local copy.
+### Linux
+
+```bash
+bash run.sh
+```
+
+The app needs a graphical desktop. On Linux, the first download requires `curl`. Both launchers download the pinned SQLite JDBC driver into `lib` on the first run and reuse it afterward.
+
+## Using the app
 
 Use **File → Save Session** to write your clients, offerings, and saved quotations to a `.sqlite` database. **File → Load Session** opens either a `.sqlite` database or a legacy `.qbs` session. After opening a `.qbs` file, **Save Session** creates a separate SQLite database. **Help → Show Session File Location** shows the active file’s path.
 
