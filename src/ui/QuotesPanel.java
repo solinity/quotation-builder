@@ -4,21 +4,28 @@ import static ui.SwingSupport.button;
 
 import export.QuotePdf;
 import java.awt.BorderLayout;
+import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JDialog;
+import javax.swing.JEditorPane;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import model.Client;
@@ -245,29 +252,47 @@ public class QuotesPanel extends JPanel {
     }
 
     private void openQuote() {
-        Quote selected = quoteList.getSelectedValue();
+        Quote selected = selectedQuote("open");
         if (selected == null) {
-            showError("Select a saved quotation to open.");
             return;
         }
-        QuoteDialog dialog = new QuoteDialog(SwingUtilities.getWindowAncestor(this),
-                dataStore.getQuoteNumber(selected), selected, dataStore.getCurrencySettings());
+
+        int number = dataStore.getQuoteNumber(selected);
+        JEditorPane document = new JEditorPane("text/plain",
+                QuotePdf.preview(selected, number, dataStore.getCurrencySettings()));
+        document.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
+        document.setEditable(false);
+        document.getAccessibleContext().setAccessibleName("Quotation details");
+        document.setBorder(BorderFactory.createEmptyBorder(18, 24, 20, 24));
+        document.setCaretPosition(0);
+
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), "Quotation #" + number,
+                Dialog.ModalityType.DOCUMENT_MODAL);
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+        dialog.add(new JScrollPane(document), BorderLayout.CENTER);
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 7));
+        JButton close = button("Close", event -> dialog.dispose());
+        buttons.add(close);
+        dialog.add(buttons, BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(close);
+        dialog.getRootPane().registerKeyboardAction(event -> dialog.dispose(), KeyStroke.getKeyStroke("ESCAPE"),
+                JComponent.WHEN_IN_FOCUSED_WINDOW);
+        dialog.setMinimumSize(new Dimension(620, 360));
+        dialog.setSize(820, 560);
+        dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
     }
 
     private void editQuote() {
-        Quote selected = quoteList.getSelectedValue();
-        if (selected == null) {
-            showError("Select a saved quotation to edit.");
-            return;
+        Quote selected = selectedQuote("edit");
+        if (selected != null) {
+            loadQuote(selected);
         }
-        loadQuote(selected);
     }
 
     private void exportPdf() {
-        Quote selected = quoteList.getSelectedValue();
+        Quote selected = selectedQuote("export");
         if (selected == null) {
-            showError("Select a saved quotation to export.");
             return;
         }
         int number = dataStore.getQuoteNumber(selected);
@@ -283,6 +308,14 @@ public class QuotesPanel extends JPanel {
         } catch (IOException error) {
             showError("Could not write the PDF. " + error.getMessage());
         }
+    }
+
+    private Quote selectedQuote(String action) {
+        Quote selected = quoteList.getSelectedValue();
+        if (selected == null) {
+            showError("Select a saved quotation to " + action + ".");
+        }
+        return selected;
     }
 
     private void loadQuote(Quote quote) {
@@ -315,9 +348,7 @@ public class QuotesPanel extends JPanel {
             dateField.setText(draft.getDate().toString());
             statusChoices.setSelectedItem(draft.getStatus());
             discountField.setText(Double.toString(draft.getDiscountPercent()));
-            for (QuoteItem item : draft.getItems()) {
-                itemModel.addElement(item);
-            }
+            itemModel.addAll(draft.getItems());
         }
         refreshEditorMode();
         showTotals();

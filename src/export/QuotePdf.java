@@ -12,58 +12,33 @@ import java.util.List;
 import java.util.Locale;
 import model.Client;
 import model.CurrencySettings;
-import model.Offering;
 import model.Quote;
 import model.QuoteItem;
 
-/**
- * Writes a quotation to a PDF file without any external library.
- *
- * Uses the standard Courier fonts and a cross-reference table for the page objects.
- */
+/** Builds the receipt text used by the preview and the PDF exporter. */
 public final class QuotePdf {
-    private static final int LEFT = 48;
-    private static final int RIGHT = 547;
-    private static final int TOP = 788;
-    private static final int BOTTOM = 50;
-    private static final int LINE_HEIGHT = 14;
-    private static final int FONT_SIZE = 10;
-    private static final int TITLE_HEIGHT = 23;
-    private static final int METADATA_HEIGHT = 28;
-    private static final int TABLE_HEADER_HEIGHT = LINE_HEIGHT + 7;
-    private static final int ITEM_GAP = 4;
-    private static final int ITEM_LINES_PER_PAGE =
-            (TOP - BOTTOM - TITLE_HEIGHT - METADATA_HEIGHT - TABLE_HEADER_HEIGHT - ITEM_GAP) / LINE_HEIGHT;
-
-    private static final int OFFERING_LEFT = 74;
-    private static final int QTY_LEFT = 226;
-    private static final int PRICE_LEFT = 284;
-    private static final int DISCOUNT_LEFT = 388;
-    private static final int TOTAL_LEFT = 448;
-    private static final int COLUMN_GAP = 6;
-    private static final int[] AMOUNT_COLUMNS = {QTY_LEFT, PRICE_LEFT, DISCOUNT_LEFT, TOTAL_LEFT, RIGHT};
-    private static final String[] AMOUNT_HEADINGS = {"Qty", "Unit price", "Disc.", "Line total"};
+    private static final int TEXT_WIDTH = 82;
+    private static final int LINES_PER_PAGE = 50;
+    private static final String RULE = "-".repeat(TEXT_WIDTH);
     private static final Charset PDF_CHARSET = Charset.forName("windows-1252");
 
-    private final Quote quote;
-    private final int number;
-    private final CurrencySettings currency;
-    private final List<StringBuilder> pages = new ArrayList<>();
-    private int y;
+    private QuotePdf() {
+    }
 
-    private QuotePdf(Quote quote, int number, CurrencySettings currency) {
-        this.quote = quote;
-        this.number = number;
-        this.currency = currency;
+    public static String preview(Quote quote, int number, CurrencySettings currency) {
+        StringBuilder text = new StringBuilder("Quotation #" + number + "\n\n");
+        for (List<String> section : sections(quote, currency)) {
+            text.append(String.join("\n", section)).append('\n');
+        }
+        return text.toString();
     }
 
     public static void write(Path file, Quote quote, int number, CurrencySettings currency) throws IOException {
-        QuotePdf pdf = new QuotePdf(quote, number, currency);
-        pdf.addContent();
+        byte[] bytes = pdfBytes("QUOTATION #" + number, paginate(sections(quote, currency)));
         Path target = file.toAbsolutePath().normalize();
         Path temporary = Files.createTempFile(target.getParent(), ".quotation-", ".pdf.tmp");
         try {
-            Files.write(temporary, pdf.toPdfBytes());
+            Files.write(temporary, bytes);
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException error) {
@@ -74,152 +49,66 @@ public final class QuotePdf {
         }
     }
 
-    private void addContent() {
+    private static List<List<String>> sections(Quote quote, CurrencySettings currency) {
+        List<List<String>> sections = new ArrayList<>();
         Client client = quote.getClient();
-        startPage(false);
-        addLine("Prepared for", LEFT, FONT_SIZE, true);
-        addContact(client.getName());
-        addContact("Email: " + client.getEmailOrDefault());
-        addContact("Phone: " + client.getPhoneOrDefault());
-        y -= 12;
-        ensureSpace(4 * LINE_HEIGHT, false);
-        addTableHeader();
+        sections.add(wrap("Date: " + quote.getDate() + "    Status: " + quote.getStatus()
+                + "\n\nPrepared for\n" + client.getName()
+                + "\nEmail: " + client.getEmailOrDefault() + "\nPhone: " + client.getPhoneOrDefault()
+                + "\n\n" + RULE, ""));
 
-        int line = 1;
+        int number = 1;
         for (QuoteItem item : quote.getItems()) {
-            addItem(item, line++);
+            List<String> lines = wrap(number++ + ". " + item.getOffering().getName(), "");
+            String description = item.getOffering().getDescription();
+            if (!description.isEmpty()) {
+                lines.addAll(wrap(description, "   "));
+            }
+            lines.addAll(wrap("Qty / hours: " + number(item.getQuantity()) + "    Unit price: "
+                    + currency.format(item.getUnitPrice()) + "    Discount: " + number(item.getDiscountPercent()) + "%", "   "));
+            lines.add("   Line total: " + currency.format(item.getLineTotal()));
+            lines.add("");
+            sections.add(lines);
         }
-        addTotals();
-        for (int i = 0; i < pages.size(); i++) {
-            drawText(pages.get(i), LEFT, 30, "Page " + (i + 1) + " / " + pages.size(), 9, false);
-        }
-    }
 
-    private void startPage(boolean withTableHeader) {
-        pages.add(new StringBuilder());
-        y = TOP;
-        drawText(page(), LEFT, y, "QUOTATION #" + number, 18, true);
-        y -= TITLE_HEIGHT;
-        drawText(page(), LEFT, y, "Date: " + quote.getDate() + "    Status: " + quote.getStatus(), FONT_SIZE, false);
-        y -= METADATA_HEIGHT;
-        if (withTableHeader) {
-            addTableHeader();
-        }
-    }
-
-    private void addContact(String text) {
-        for (String line : wrap(text, (RIGHT - LEFT) / 6)) {
-            ensureSpace(LINE_HEIGHT, false);
-            addLine(line, LEFT, FONT_SIZE, false);
-        }
-    }
-
-    private void addTableHeader() {
-        fillBand(LEFT);
-        drawText(page(), LEFT + 3, y, "No", FONT_SIZE, true);
-        drawText(page(), OFFERING_LEFT, y, "Offering", FONT_SIZE, true);
-        drawAmountColumns(AMOUNT_HEADINGS, true);
-        y -= TABLE_HEADER_HEIGHT;
-    }
-
-    private void addItem(QuoteItem item, int number) {
-        Offering offering = item.getOffering();
-        int textWidth = QTY_LEFT - OFFERING_LEFT - COLUMN_GAP;
-        List<String> name = wrap(offering.getName(), textWidth / 6);
-        String description = offering.getDescription();
-        List<String> details = description.isEmpty() ? List.of() : wrap(description, (int) (textWidth / 5.4));
-
-        int lineCount = name.size() + details.size();
-        int linesToReserve = lineCount <= ITEM_LINES_PER_PAGE ? lineCount : 2;
-        ensureSpace(linesToReserve * LINE_HEIGHT + ITEM_GAP, true);
-        drawRight(Integer.toString(number), LEFT, OFFERING_LEFT - COLUMN_GAP, false);
-        drawText(page(), OFFERING_LEFT, y, name.get(0), FONT_SIZE, true);
-        String[] amounts = {
-            number(item.getQuantity()),
-            currency.format(item.getUnitPrice()),
-            number(item.getDiscountPercent()) + "%",
-            currency.format(item.getLineTotal())
-        };
-        drawAmountColumns(amounts, false);
-        y -= LINE_HEIGHT;
-        for (int i = 1; i < name.size(); i++) {
-            addItemLine(name.get(i), number, FONT_SIZE, true);
-        }
-        for (String line : details) {
-            addItemLine(line, number, 9, false);
-        }
-        y -= ITEM_GAP;
-    }
-
-    private void addTotals() {
-        ensureSpace(4 * LINE_HEIGHT, false);
-        y -= 8;
         double subtotal = quote.getSubtotal();
         double total = quote.getTotal();
-        addTotal("Subtotal", subtotal, false);
-        addTotal("Quote discount (" + number(quote.getDiscountPercent()) + "%)", subtotal - total, false);
-        fillBand(PRICE_LEFT - 8);
-        addTotal("TOTAL", total, true);
+        sections.add(List.of(RULE,
+                totalLine("Subtotal", currency.format(subtotal)),
+                totalLine("Quote discount (" + number(quote.getDiscountPercent()) + "%)", currency.format(subtotal - total)),
+                totalLine("TOTAL", currency.format(total))));
+        return sections;
     }
 
-    private void addTotal(String label, double amount, boolean bold) {
-        drawText(page(), PRICE_LEFT - 2, y, label, fitSize(label, TOTAL_LEFT - PRICE_LEFT - COLUMN_GAP), bold);
-        drawRight(currency.format(amount), TOTAL_LEFT, RIGHT - COLUMN_GAP, bold);
-        y -= LINE_HEIGHT + 5;
+    private static String totalLine(String name, String amount) {
+        return name + " ".repeat(TEXT_WIDTH - name.length() - amount.length()) + amount;
     }
 
-    private void addItemLine(String text, int number, int size, boolean bold) {
-        if (y - LINE_HEIGHT < BOTTOM) {
-            startPage(true);
-            addLine("Item " + number + " (continued)", OFFERING_LEFT, 9, true);
+    // Keep each item together when it fits on a page.
+    private static List<List<String>> paginate(List<List<String>> sections) {
+        List<List<String>> pages = new ArrayList<>();
+        List<String> page = new ArrayList<>();
+        pages.add(page);
+        for (List<String> section : sections) {
+            if (section.size() <= LINES_PER_PAGE && page.size() + section.size() > LINES_PER_PAGE) {
+                page = new ArrayList<>();
+                pages.add(page);
+            }
+            for (String line : section) {
+                if (page.size() == LINES_PER_PAGE) {
+                    page = new ArrayList<>();
+                    pages.add(page);
+                }
+                page.add(line);
+            }
         }
-        addLine(text, OFFERING_LEFT, size, bold);
+        return pages;
     }
 
-    private void addLine(String text, int x, int size, boolean bold) {
-        drawText(page(), x, y, text, size, bold);
-        y -= LINE_HEIGHT;
-    }
-
-    private void ensureSpace(int height, boolean inTable) {
-        if (y - height < BOTTOM) {
-            startPage(inTable);
-        }
-    }
-
-    private void fillBand(int left) {
-        page().append("q 0.88 0.92 0.96 rg ").append(left).append(' ').append(y - 5).append(' ')
-                .append(RIGHT - left).append(" 18 re f Q\n");
-    }
-
-    private StringBuilder page() {
-        return pages.get(pages.size() - 1);
-    }
-
-    private void drawAmountColumns(String[] values, boolean bold) {
-        for (int i = 0; i < values.length; i++) {
-            drawRight(values[i], AMOUNT_COLUMNS[i], AMOUNT_COLUMNS[i + 1] - COLUMN_GAP, bold);
-        }
-    }
-
-    private void drawRight(String text, int left, int right, boolean bold) {
-        int size = fitSize(text, right - left);
-        drawText(page(), right - size * text.length() * 0.6, y, text, size, bold);
-    }
-
-    private static int fitSize(String text, int width) {
-        return Math.min(FONT_SIZE, Math.max(1, (int) (width / (text.length() * 0.6))));
-    }
-
-    private static void drawText(StringBuilder page, double x, int y, String text, int size, boolean bold) {
-        page.append("BT /").append(bold ? "F2" : "F1").append(' ').append(size).append(" Tf ")
-                .append(String.format(Locale.ROOT, "%.2f", x)).append(' ').append(y).append(" Td (")
-                .append(escape(text)).append(") Tj ET\n");
-    }
-
-    private static List<String> wrap(String text, int width) {
+    private static List<String> wrap(String text, String indent) {
         List<String> lines = new ArrayList<>();
-        for (String paragraph : text.replace("\r\n", "\n").replace('\r', '\n').replace('\t', ' ').split("\n", -1)) {
+        int width = TEXT_WIDTH - indent.length();
+        for (String paragraph : text.replace('\t', ' ').split("\\R", -1)) {
             String line = paragraph.strip();
             int start = 0;
             do {
@@ -236,7 +125,7 @@ public final class QuotePdf {
                         end--;
                     }
                 }
-                lines.add(line.substring(start, end).stripTrailing());
+                lines.add(indent + line.substring(start, end).stripTrailing());
                 start = end;
                 while (start < line.length() && Character.isWhitespace(line.charAt(start))) {
                     start++;
@@ -251,51 +140,53 @@ public final class QuotePdf {
         return text.endsWith(".0") ? text.substring(0, text.length() - 2) : text;
     }
 
-    private static String escape(String text) {
+    private static void draw(StringBuilder page, String text, int y, int size, String font) {
         String latin = new String(text.getBytes(PDF_CHARSET), StandardCharsets.ISO_8859_1);
-        return latin.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)");
+        String escaped = latin.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)");
+        page.append("BT /").append(font).append(' ').append(size).append(" Tf 48 ").append(y)
+                .append(" Td (").append(escaped).append(") Tj ET\n");
     }
 
-    private byte[] toPdfBytes() {
-        int pageCount = pages.size();
+    private static byte[] pdfBytes(String title, List<List<String>> pages) {
         List<String> objects = new ArrayList<>();
-
-        // Object 1: the catalog (entry point). Object 2: the list of pages.
         objects.add("<< /Type /Catalog /Pages 2 0 R >>");
         StringBuilder kids = new StringBuilder();
-        for (int i = 0; i < pageCount; i++) {
-            kids.append(5 + 2 * i).append(" 0 R ");   // page objects are numbered 5, 7, 9, ...
+        for (int i = 0; i < pages.size(); i++) {
+            kids.append(5 + 2 * i).append(" 0 R ");
         }
-        objects.add("<< /Type /Pages /Kids [" + kids + "] /Count " + pageCount + " >>");
-
-        // Objects 3 and 4: the two fonts (regular and bold) built into every PDF reader.
+        objects.add("<< /Type /Pages /Kids [" + kids + "] /Count " + pages.size() + " >>");
         objects.add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>");
         objects.add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>");
 
-        // For each page: one object describing the page, one object holding its drawing commands.
-        for (int i = 0; i < pageCount; i++) {
+        for (int i = 0; i < pages.size(); i++) {
             objects.add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842]"
                     + " /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >>"
                     + " /Contents " + (6 + 2 * i) + " 0 R >>");
-            String content = pages.get(i).toString();
+            StringBuilder content = new StringBuilder();
+            draw(content, title, 788, 18, "F2");
+            int y = 755;
+            for (String line : pages.get(i)) {
+                draw(content, line, y, 10, line.startsWith("TOTAL") ? "F2" : "F1");
+                y -= 14;
+            }
+            draw(content, "Page " + (i + 1) + " / " + pages.size(), 30, 9, "F1");
             objects.add("<< /Length " + content.length() + " >>\nstream\n" + content + "endstream");
         }
 
-        // Write header, every object (remembering where each starts), then the xref table.
+        // The cross-reference table points to the byte offset of each PDF object.
         StringBuilder file = new StringBuilder("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n");
-        int[] starts = new int[objects.size()];
+        int[] offsets = new int[objects.size()];
         for (int i = 0; i < objects.size(); i++) {
-            starts[i] = file.length();
+            offsets[i] = file.length();
             file.append(i + 1).append(" 0 obj\n").append(objects.get(i)).append("\nendobj\n");
         }
         int xrefStart = file.length();
         file.append("xref\n0 ").append(objects.size() + 1).append("\n0000000000 65535 f \n");
-        for (int start : starts) {
-            file.append(String.format(Locale.ROOT, "%010d 00000 n \n", start));
+        for (int offset : offsets) {
+            file.append(String.format(Locale.ROOT, "%010d 00000 n \n", offset));
         }
         file.append("trailer\n<< /Size ").append(objects.size() + 1).append(" /Root 1 0 R >>\n")
-            .append("startxref\n").append(xrefStart).append("\n%%EOF\n");
-
+                .append("startxref\n").append(xrefStart).append("\n%%EOF\n");
         return file.toString().getBytes(StandardCharsets.ISO_8859_1);
     }
 }

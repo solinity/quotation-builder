@@ -200,11 +200,9 @@ public final class SessionDatabase {
                 "INSERT INTO session_settings (id, currency, base_currency, pyg_per_usd) VALUES (1, ?, ?, ?)"
                         + " ON CONFLICT(id) DO UPDATE SET currency = excluded.currency,"
                         + " base_currency = excluded.base_currency, pyg_per_usd = excluded.pyg_per_usd")) {
-            save.setString(1, settings.getDisplayCurrency().name());
-            save.setString(2, settings.getBaseCurrency().name());
             BigDecimal rate = settings.getGuaraniesPerDollar();
-            save.setString(3, rate == null ? null : rate.toPlainString());
-            save.executeUpdate();
+            saveRow(save, settings.getDisplayCurrency().name(), settings.getBaseCurrency().name(),
+                    rate == null ? null : rate.toPlainString());
         }
     }
 
@@ -213,11 +211,7 @@ public final class SessionDatabase {
                 "INSERT INTO clients (id, name, email, phone) VALUES (?, ?, ?, ?)")) {
             for (int i = 0; i < data.getClientCount(); i++) {
                 Client client = data.getClient(i);
-                insert.setInt(1, i + 1);
-                insert.setString(2, client.getName());
-                insert.setString(3, client.getEmail());
-                insert.setString(4, client.getPhone());
-                insert.executeUpdate();
+                saveRow(insert, i + 1, client.getName(), client.getEmail(), client.getPhone());
             }
         }
     }
@@ -227,11 +221,7 @@ public final class SessionDatabase {
                 "INSERT INTO offerings (id, name, description, unit_price) VALUES (?, ?, ?, ?)")) {
             for (int i = 0; i < data.getOfferingCount(); i++) {
                 Offering offering = data.getOffering(i);
-                insert.setInt(1, i + 1);
-                insert.setString(2, offering.getName());
-                insert.setString(3, offering.getDescription());
-                insert.setDouble(4, offering.getUnitPrice());
-                insert.executeUpdate();
+                saveRow(insert, i + 1, offering.getName(), offering.getDescription(), offering.getUnitPrice());
             }
         }
     }
@@ -249,25 +239,23 @@ public final class SessionDatabase {
                     throw new IOException("A quotation needs at least one item before saving the session.");
                 }
 
-                quotation.setInt(1, i + 1);
-                quotation.setInt(2, data.getClientNumber(quote.getClient()));
-                quotation.setString(3, quote.getDate().toString());
-                quotation.setString(4, quote.getStatus().name());
-                quotation.setDouble(5, quote.getDiscountPercent());
-                quotation.executeUpdate();
+                saveRow(quotation, i + 1, data.getClientNumber(quote.getClient()), quote.getDate().toString(),
+                        quote.getStatus().name(), quote.getDiscountPercent());
 
                 for (int j = 0; j < items.size(); j++) {
                     QuoteItem item = items.get(j);
-                    line.setInt(1, i + 1);
-                    line.setInt(2, j + 1);
-                    line.setInt(3, data.getOfferingNumber(item.getOffering()));
-                    line.setDouble(4, item.getQuantity());
-                    line.setDouble(5, item.getUnitPrice());
-                    line.setDouble(6, item.getDiscountPercent());
-                    line.executeUpdate();
+                    saveRow(line, i + 1, j + 1, data.getOfferingNumber(item.getOffering()), item.getQuantity(),
+                            item.getUnitPrice(), item.getDiscountPercent());
                 }
             }
         }
+    }
+
+    private static void saveRow(PreparedStatement statement, Object... values) throws SQLException {
+        for (int i = 0; i < values.length; i++) {
+            statement.setObject(i + 1, values[i]);
+        }
+        statement.executeUpdate();
     }
 
     private static Map<Long, Client> readClients(Statement sql, DataStore data) throws SQLException {
