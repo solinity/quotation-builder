@@ -1,11 +1,15 @@
 package model;
 
+import static model.Validation.require;
+
 import java.io.Serializable;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import model.CatalogEntry.Client;
+import model.CatalogEntry.Offering;
 
-public class Quote implements Serializable {
+public final class Quote implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public enum Status {
@@ -16,47 +20,56 @@ public class Quote implements Serializable {
     private LocalDate date;
     private Status status;
     private double discountPercent;
-    private ArrayList<QuoteItem> items = new ArrayList<>();
+    private ArrayList<Item> items;
 
     public Quote(Client client) {
         this(client, LocalDate.now(), Status.DRAFT, 0);
     }
 
     public Quote(Client client, LocalDate date, Status status, double discountPercent) {
-        setClient(client);
-        setDate(date);
-        setStatus(status);
-        setDiscountPercent(discountPercent);
+        this(client, date, status, discountPercent, List.of());
     }
 
-    public void addItem(QuoteItem item) {
-        if (item == null) {
-            throw new IllegalArgumentException("Select a quotation item.");
-        }
-        if (!Double.isFinite(getSubtotal() + item.getLineTotal())) {
-            throw new IllegalArgumentException("The quotation subtotal is too large.");
-        }
+    public Quote(Client client, LocalDate date, Status status, double discountPercent, List<Item> items) {
+        update(client, date, status, discountPercent);
+        this.items = new ArrayList<>(items);
+        subtotal(this.items);
+    }
+
+    public void addItem(Item item) {
+        require(item != null, "Select a quotation item.");
+        require(Double.isFinite(getSubtotal() + item.getLineTotal()), "The quotation subtotal is too large.");
         items.add(item);
     }
 
-    public void removeItem(QuoteItem item) {
+    public void removeItem(Item item) {
         items.remove(item);
     }
 
-    public List<QuoteItem> getItems() {
+    public List<Item> getItems() {
         return new ArrayList<>(items);
     }
 
     public double getSubtotal() {
+        return subtotal(items);
+    }
+
+    public static double subtotal(List<Item> items) {
         double sum = 0;
-        for (QuoteItem item : items) {
+        for (Item item : items) {
+            require(item != null, "Select a quotation item.");
             sum += item.getLineTotal();
         }
+        require(Double.isFinite(sum), "The quotation subtotal is too large.");
         return sum;
     }
 
     public double getTotal() {
-        return getSubtotal() * (1 - discountPercent / 100.0);
+        return discounted(getSubtotal(), discountPercent);
+    }
+
+    public static double discounted(double amount, double discountPercent) {
+        return amount * (1 - discountPercent / 100.0);
     }
 
     public Client getClient() {
@@ -75,53 +88,73 @@ public class Quote implements Serializable {
         return discountPercent;
     }
 
-    public void setClient(Client client) {
-        if (client == null) {
-            throw new IllegalArgumentException("A quote needs a client");
-        }
+    public void update(Client client, LocalDate date, Status status, double discountPercent) {
+        require(client != null, "A quote needs a client");
+        require(date != null, "Date can't be empty");
+        require(status != null, "Status can't be empty");
+        this.discountPercent = checkedDiscount(discountPercent, "Discount");
         this.client = client;
-    }
-
-    public void setDate(LocalDate date) {
-        if (date == null) {
-            throw new IllegalArgumentException("Date can't be empty");
-        }
         this.date = date;
-    }
-
-    public void setStatus(Status status) {
-        if (status == null) {
-            throw new IllegalArgumentException("Status can't be empty");
-        }
         this.status = status;
     }
 
-    public void setDiscountPercent(double discountPercent) {
-        if (!Double.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
-            throw new IllegalArgumentException("Discount must be a finite number between 0 and 100.");
-        }
-        this.discountPercent = discountPercent == 0 ? 0 : discountPercent;
+    public static double checkedDiscount(double discount, String label) {
+        require(Double.isFinite(discount) && discount >= 0 && discount <= 100,
+                label + " must be a finite number between 0 and 100.");
+        return discount == 0 ? 0 : discount;
     }
 
     public void updateFrom(Quote source) {
-        if (source == null) {
-            throw new IllegalArgumentException("A quotation is required.");
-        }
-        client = source.client;
-        date = source.date;
-        status = source.status;
-        discountPercent = source.discountPercent;
+        require(source != null, "A quotation is required.");
+        update(source.client, source.date, source.status, source.discountPercent);
         items = new ArrayList<>(source.items);
-    }
-
-    public Quote copy() {
-        Quote copy = new Quote(client);
-        copy.updateFrom(this);
-        return copy;
     }
 
     @Override
     public String toString() {
         return String.format("%s - %s - %.2f", client.getName(), date, getTotal());
+    }
+
+    public static class Item implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        private final Offering offering;
+        private final double quantity;
+        private final double unitPrice;
+        private final double discountPercent;
+
+        public Item(Offering offering, double quantity, double unitPrice) {
+            this(offering, quantity, unitPrice, 0);
+        }
+
+        public Item(Offering offering, double quantity, double unitPrice, double discountPercent) {
+            require(offering != null, "Select an offering.");
+            require(Double.isFinite(quantity) && quantity > 0, "Quantity must be a finite number greater than zero.");
+            this.unitPrice = Offering.checkedPrice(unitPrice);
+            require(Double.isFinite(quantity * unitPrice), "The line total is too large.");
+            this.discountPercent = Quote.checkedDiscount(discountPercent, "Item discount");
+            this.offering = offering;
+            this.quantity = quantity;
+        }
+
+        public Offering getOffering() {
+            return offering;
+        }
+
+        public double getQuantity() {
+            return quantity;
+        }
+
+        public double getUnitPrice() {
+            return unitPrice;
+        }
+
+        public double getDiscountPercent() {
+            return discountPercent;
+        }
+
+        public double getLineTotal() {
+            return Quote.discounted(quantity * unitPrice, discountPercent);
+        }
     }
 }

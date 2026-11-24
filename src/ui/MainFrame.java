@@ -148,22 +148,15 @@ public class MainFrame extends JFrame {
         return sessionFile == null ? null : sessionFile.getParent();
     }
 
-    private String suggestedSaveName() {
-        if (sessionFile == null) {
-            return "quotation-session" + SessionDatabase.EXTENSION;
-        }
-        String name = sessionFile.getFileName().toString();
-        if (SessionDatabase.isLegacySession(sessionFile)) {
-            return name.substring(0, name.lastIndexOf('.')) + SessionDatabase.EXTENSION;
-        }
-        return name;
-    }
-
     private void saveSession(boolean chooseLocation) {
         Path target = sessionFile;
-        if (chooseLocation || target == null || SessionDatabase.isLegacySession(target)) {
-            target = SwingSupport.saveAs(this, "Save Session As", sessionDirectory(),
-                    suggestedSaveName(), SessionDatabase.EXTENSION);
+        boolean legacy = target != null && SessionDatabase.isLegacySession(target);
+        if (chooseLocation || target == null || legacy) {
+            String name = target == null ? "quotation-session" + SessionDatabase.EXTENSION : target.getFileName().toString();
+            if (legacy) {
+                name = name.substring(0, name.lastIndexOf('.')) + SessionDatabase.EXTENSION;
+            }
+            target = SwingSupport.saveAs(this, "Save Session As", sessionDirectory(), name, SessionDatabase.EXTENSION);
         }
         if (target == null) {
             return;
@@ -183,7 +176,7 @@ public class MainFrame extends JFrame {
         }
         try {
             DataStore loaded = SessionDatabase.load(selected);
-            if ((dataStore.getClientCount() > 0 || dataStore.getOfferingCount() > 0 || dataStore.getQuoteCount() > 0)
+            if (!dataStore.isEmpty()
                     && JOptionPane.showConfirmDialog(this,
                     "Load this file and replace the records and open forms in this window?", "Load Session",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {

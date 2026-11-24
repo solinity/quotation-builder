@@ -1,5 +1,7 @@
 package ui;
 
+import static storage.DataStore.numberOf;
+
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.FileDialog;
@@ -7,7 +9,6 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.Point;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
@@ -20,10 +21,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Vector;
 import java.util.function.Function;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
-import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -35,12 +36,10 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import model.Client;
-import model.Offering;
+import model.CatalogEntry.Client;
+import model.CatalogEntry.Offering;
 import model.Quote;
-import model.QuoteItem;
+import model.Quote.Item;
 import storage.DataStore;
 
 final class SwingSupport {
@@ -100,6 +99,53 @@ final class SwingSupport {
         list.getAccessibleContext().setAccessibleName(accessibleName);
     }
 
+    static final class RecordList<T> extends JList<T> {
+        private static final long serialVersionUID = 1L;
+        private final JTextField search = new JTextField(18);
+        private final JLabel status = new JLabel();
+        private final Function<String, List<? extends T>> find;
+        private final String emptyMessage;
+        private String query = "";
+
+        RecordList(String name, String emptyMessage, RecordRenderer renderer, Function<String, List<? extends T>> find) {
+            this.find = find;
+            this.emptyMessage = emptyMessage;
+            configureList(this, renderer, name);
+            search.addActionListener(event -> search());
+            refresh();
+        }
+
+        JPanel panel(String title, String label, JPanel actions) {
+            JLabel searchLabel = labelFor(label, search);
+            JButton findButton = button("Search", event -> search());
+            JButton showAllButton = button("Show All", event -> showAll());
+            JScrollPane results = new JScrollPane(this);
+            if (actions == null) {
+                return borderPanel(title, 5, row(8, 5, searchLabel, search, findButton, showAllButton), results, status);
+            }
+            JPanel searchBar = borderPanel(null, 3, searchLabel, search, row(6, 3, findButton, showAllButton, status));
+            return borderPanel(title, 5, searchBar, results, actions);
+        }
+
+        void showAll() {
+            search.setText("");
+            search();
+        }
+
+        private void search() {
+            query = search.getText().trim();
+            refresh();
+        }
+
+        void refresh() {
+            T selected = getSelectedValue();
+            List<? extends T> records = find.apply(query);
+            setListData(new Vector<>(records));
+            setSelectedValue(selected, true);
+            status.setText(records.isEmpty() ? emptyMessage : records.size() + " shown");
+        }
+    }
+
     static Path openFile(Component owner, String title, Path directory) {
         return chooseFile(owner, title, FileDialog.LOAD, directory, null);
     }
@@ -122,12 +168,8 @@ final class SwingSupport {
     private static Path chooseFile(Component owner, String title, int mode, Path directory, String filename) {
         FileDialog dialog = new FileDialog(JOptionPane.getFrameForComponent(owner), title, mode);
         try {
-            if (directory != null) {
-                dialog.setDirectory(directory.toString());
-            }
-            if (filename != null) {
-                dialog.setFile(filename);
-            }
+            dialog.setDirectory(directory == null ? null : directory.toString());
+            dialog.setFile(filename);
             dialog.setVisible(true);
             File[] files = dialog.getFiles();
             return files.length == 0 ? null : files[0].toPath().toAbsolutePath().normalize();
@@ -183,12 +225,12 @@ final class SwingSupport {
         String label(Object value) {
             if (value instanceof Client) {
                 Client client = (Client) value;
-                return "#" + dataStore.getClientNumber(client) + "  " + client.getName()
+                return "#" + numberOf(dataStore.getClients(), client) + "  " + client.getName()
                         + "  |  " + client.getEmailOrDefault() + "  |  " + client.getPhoneOrDefault();
             }
             if (value instanceof Offering) {
                 Offering offering = (Offering) value;
-                int number = dataStore.getOfferingNumber(offering);
+                int number = numberOf(dataStore.getOfferings(), offering);
                 String prefix = number > 0 ? "#" + number + "  " : "";
                 String description = offering.getDescription().replace('\n', ' ').replace('\r', ' ');
                 String suffix = description.isEmpty() ? "" : "  |  " + description;
@@ -196,13 +238,13 @@ final class SwingSupport {
             }
             if (value instanceof Quote) {
                 Quote quote = (Quote) value;
-                return "#" + dataStore.getQuoteNumber(quote) + "  " + quote.getClient().getName()
+                return "#" + numberOf(dataStore.getQuotes(), quote) + "  " + quote.getClient().getName()
                         + "  |  " + quote.getDate() + "  |  " + quote.getStatus() + "  |  " + amount(quote.getTotal());
             }
-            if (value instanceof QuoteItem) {
-                QuoteItem item = (QuoteItem) value;
+            if (value instanceof Item) {
+                Item item = (Item) value;
                 Offering offering = item.getOffering();
-                int number = dataStore.getOfferingNumber(offering);
+                int number = numberOf(dataStore.getOfferings(), offering);
                 String prefix = number > 0 ? "#" + number + "  " : "[Deleted] ";
                 double discount = item.getDiscountPercent();
                 String discountLabel = discount > 0 ? " (" + discount + "% off)" : "";
@@ -223,8 +265,7 @@ final class SwingSupport {
 
         private final Function<String, List<T>> search;
         private final RecordRenderer renderer;
-        private final DefaultListModel<T> matches = new DefaultListModel<>();
-        private final JList<T> results = new JList<>(matches);
+        private final JList<T> results = new JList<>();
         private final JScrollPane resultsPane = new JScrollPane(results);
         private final JLabel noMatches = new JLabel("No matching names");
         private final JPopupMenu suggestions = new JPopupMenu();
@@ -255,20 +296,10 @@ final class SwingSupport {
         }
 
         private void registerListeners() {
-            getDocument().addDocumentListener(new DocumentListener() {
-                @Override
-                public void insertUpdate(DocumentEvent event) {
-                    queryChanged();
-                }
-
-                @Override
-                public void removeUpdate(DocumentEvent event) {
-                    queryChanged();
-                }
-
-                @Override
-                public void changedUpdate(DocumentEvent event) {
-                    queryChanged();
+            getDocument().addUndoableEditListener(event -> {
+                if (!settingSelection) {
+                    selectedRecord = null;
+                    showSuggestions();
                 }
             });
             addFocusListener(new FocusAdapter() {
@@ -306,11 +337,10 @@ final class SwingSupport {
             results.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent event) {
-                    Point point = event.getPoint();
-                    int index = results.locationToIndex(point);
+                    int index = results.locationToIndex(event.getPoint());
                     if (SwingUtilities.isLeftMouseButton(event) && index >= 0
-                            && results.getCellBounds(index, index).contains(point)) {
-                        chooseRecord(matches.get(index));
+                            && results.getCellBounds(index, index).contains(event.getPoint())) {
+                        chooseRecord(results.getModel().getElementAt(index));
                     }
                 }
             });
@@ -334,15 +364,7 @@ final class SwingSupport {
 
         private void chooseRecord(T record) {
             setSelectedRecord(record);
-            setCaretPosition(getDocument().getLength());
-            moveCaretPosition(0);
-        }
-
-        private void queryChanged() {
-            if (!settingSelection) {
-                selectedRecord = null;
-                showSuggestions();
-            }
+            selectAll();
         }
 
         private void showSuggestions() {
@@ -352,8 +374,8 @@ final class SwingSupport {
                 return;
             }
 
-            matches.clear();
-            matches.addAll(search.apply(query));
+            List<T> matches = search.apply(query);
+            results.setListData(new Vector<>(matches));
             boolean empty = matches.isEmpty();
             resultsPane.setVisible(!empty);
             noMatches.setVisible(empty);
@@ -376,8 +398,8 @@ final class SwingSupport {
                     return;
                 }
                 showSuggestions();
-            } else if (!matches.isEmpty()) {
-                int index = Math.max(0, Math.min(results.getSelectedIndex() + step, matches.size() - 1));
+            } else if (results.getModel().getSize() > 0) {
+                int index = Math.max(0, Math.min(results.getSelectedIndex() + step, results.getModel().getSize() - 1));
                 results.setSelectedIndex(index);
                 results.ensureIndexIsVisible(index);
             }

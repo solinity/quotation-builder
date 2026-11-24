@@ -1,5 +1,7 @@
 package storage;
 
+import static storage.DataStore.numberOf;
+
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
@@ -20,11 +22,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import model.Client;
+import model.CatalogEntry.Client;
 import model.CurrencySettings;
-import model.Offering;
+import model.CatalogEntry.Offering;
 import model.Quote;
-import model.QuoteItem;
+import model.Quote.Item;
 import model.CurrencySettings.SessionCurrency;
 
 public final class SessionDatabase {
@@ -169,26 +171,23 @@ public final class SessionDatabase {
     }
 
     private static int checkSchema(Statement sql) throws SQLException, IOException {
-        try (ResultSet row = sql.executeQuery("PRAGMA application_id")) {
-            if (!row.next() || row.getInt(1) != APPLICATION_ID) {
-                throw new IOException("Choose a Quotation Builder session database.");
-            }
-        }
-        try (ResultSet row = sql.executeQuery("PRAGMA user_version")) {
-            int version = row.next() ? row.getInt(1) : 0;
-            if (version < 1 || version > SCHEMA_VERSION) {
-                throw new IOException("This version of the app cannot open the selected database version.");
-            }
-            return version;
+        checkFile(pragmaInt(sql, "application_id") == APPLICATION_ID, "Choose a Quotation Builder session database.");
+        int version = pragmaInt(sql, "user_version");
+        checkFile(version >= 1 && version <= SCHEMA_VERSION,
+                "This version of the app cannot open the selected database version.");
+        return version;
+    }
+
+    private static int pragmaInt(Statement sql, String name) throws SQLException {
+        try (ResultSet row = sql.executeQuery("PRAGMA " + name)) {
+            return row.next() ? row.getInt(1) : 0;
         }
     }
 
     private static CurrencySettings readCurrencySettings(Statement sql, int version) throws SQLException, IOException {
         String columns = version == 2 ? "currency" : "currency, base_currency, pyg_per_usd";
         try (ResultSet row = sql.executeQuery("SELECT " + columns + " FROM session_settings WHERE id = 1")) {
-            if (!row.next()) {
-                throw new IOException("The session database is missing its currency setting.");
-            }
+            checkFile(row.next(), "The session database is missing its currency setting.");
             SessionCurrency display = SessionCurrency.valueOf(row.getString("currency"));
             if (version == 2) {
                 return new CurrencySettings(display, display, null);
@@ -215,12 +214,12 @@ public final class SessionDatabase {
                 "INSERT INTO clients (id, name, email, phone) VALUES (?, ?, ?, ?)");
                 PreparedStatement insertOffering = database.prepareStatement(
                     "INSERT INTO offerings (id, name, description, unit_price) VALUES (?, ?, ?, ?)")) {
-            for (int i = 0; i < data.getClientCount(); i++) {
-                Client client = data.getClient(i);
+            for (int i = 0; i < data.getClients().size(); i++) {
+                Client client = data.getClients().get(i);
                 saveRow(insertClient, i + 1, client.getName(), client.getEmail(), client.getPhone());
             }
-            for (int i = 0; i < data.getOfferingCount(); i++) {
-                Offering offering = data.getOffering(i);
+            for (int i = 0; i < data.getOfferings().size(); i++) {
+                Offering offering = data.getOfferings().get(i);
                 saveRow(insertOffering, i + 1, offering.getName(), offering.getDescription(), offering.getUnitPrice());
             }
         }
@@ -232,19 +231,17 @@ public final class SessionDatabase {
                 PreparedStatement line = database.prepareStatement(
                         "INSERT INTO quotation_items (quotation_id, line_number, offering_id, quantity, unit_price,"
                                 + " discount_percent) VALUES (?, ?, ?, ?, ?, ?)")) {
-            for (int i = 0; i < data.getQuoteCount(); i++) {
-                Quote quote = data.getQuote(i);
-                List<QuoteItem> items = quote.getItems();
-                if (items.isEmpty()) {
-                    throw new IOException("A quotation needs at least one item before saving the session.");
-                }
+            for (int i = 0; i < data.getQuotes().size(); i++) {
+                Quote quote = data.getQuotes().get(i);
+                List<Item> items = quote.getItems();
+                checkFile(!items.isEmpty(), "A quotation needs at least one item before saving the session.");
 
-                saveRow(quotation, i + 1, data.getClientNumber(quote.getClient()), quote.getDate().toString(),
+                saveRow(quotation, i + 1, numberOf(data.getClients(), quote.getClient()), quote.getDate().toString(),
                         quote.getStatus().name(), quote.getDiscountPercent());
 
                 for (int j = 0; j < items.size(); j++) {
-                    QuoteItem item = items.get(j);
-                    saveRow(line, i + 1, j + 1, data.getOfferingNumber(item.getOffering()), item.getQuantity(),
+                    Item item = items.get(j);
+                    saveRow(line, i + 1, j + 1, numberOf(data.getOfferings(), item.getOffering()), item.getQuantity(),
                             item.getUnitPrice(), item.getDiscountPercent());
                 }
             }
@@ -283,11 +280,9 @@ public final class SessionDatabase {
                         + " FROM quotation_items ORDER BY quotation_id, line_number")) {
             while (rows.next()) {
                 Quote quote = quotes.get(rows.getLong("quotation_id"));
-                if (quote == null) {
-                    throw new IOException("A line item refers to a missing quotation.");
-                }
+                checkFile(quote != null, "A line item refers to a missing quotation.");
                 Offering offering = offerings.get(rows.getLong("offering_id"));
-                quote.addItem(new QuoteItem(offering, rows.getDouble("quantity"), rows.getDouble("unit_price"),
+                quote.addItem(new Item(offering, rows.getDouble("quantity"), rows.getDouble("unit_price"),
                         rows.getDouble("discount_percent")));
             }
         }
@@ -298,6 +293,12 @@ public final class SessionDatabase {
         return new IOException("Could not " + operation + " the SQLite session. " + error.getMessage(), error);
     }
 
+    private static void checkFile(boolean valid, String message) throws IOException {
+        if (!valid) {
+            throw new IOException(message);
+        }
+    }
+
     // Older versions saved records in a binary file before SQLite was introduced.
     public static boolean isLegacySession(Path file) {
         return file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".qbs");
@@ -305,16 +306,10 @@ public final class SessionDatabase {
 
     private static DataStore loadLegacySession(Path file) throws IOException {
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(file)))) {
-            if (in.readInt() != LEGACY_SIGNATURE) {
-                throw new IOException("Choose a Quotation Builder session file (.qbs).");
-            }
-            if (in.readInt() != 1) {
-                throw new IOException("This version of the app cannot open the selected session format.");
-            }
+            checkFile(in.readInt() == LEGACY_SIGNATURE, "Choose a Quotation Builder session file (.qbs).");
+            checkFile(in.readInt() == 1, "This version of the app cannot open the selected session format.");
             DataStore data = readRecords(in);
-            if (in.read() != -1) {
-                throw new IOException("The session file contains unexpected data.");
-            }
+            checkFile(in.read() == -1, "The session file contains unexpected data.");
             return data;
         } catch (EOFException error) {
             throw new IOException("The session file is incomplete.", error);
@@ -334,11 +329,11 @@ public final class SessionDatabase {
         }
 
         for (int remaining = readSize(in); remaining > 0; remaining--) {
-            Quote quote = new Quote(data.getClient(in.readInt()), LocalDate.ofEpochDay(in.readLong()),
+            Quote quote = new Quote(data.getClients().get(in.readInt()), LocalDate.ofEpochDay(in.readLong()),
                     Quote.Status.valueOf(readText(in)), in.readDouble());
             for (int items = readSize(in); items > 0; items--) {
-                Offering offering = data.getOffering(in.readInt());
-                quote.addItem(new QuoteItem(offering, in.readDouble(), in.readDouble(), in.readDouble()));
+                Offering offering = data.getOfferings().get(in.readInt());
+                quote.addItem(new Item(offering, in.readDouble(), in.readDouble(), in.readDouble()));
             }
             data.addQuote(quote);
         }
@@ -356,9 +351,7 @@ public final class SessionDatabase {
 
     private static int readSize(DataInputStream in) throws IOException {
         int size = in.readInt();
-        if (size < 0) {
-            throw new IOException("The session file contains an invalid record or text length.");
-        }
+        checkFile(size >= 0, "The session file contains an invalid record or text length.");
         return size;
     }
 }

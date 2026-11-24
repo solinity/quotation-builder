@@ -1,5 +1,7 @@
 package model;
 
+import static model.Validation.require;
+
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.Locale;
@@ -15,11 +17,10 @@ public final class CurrencySettings {
         this.displayCurrency = Objects.requireNonNull(displayCurrency);
         if (guaraniesPerDollar != null) {
             double rate = guaraniesPerDollar.doubleValue();
-            if (!Double.isFinite(rate) || rate <= 0) {
-                throw new IllegalArgumentException("Enter a positive exchange rate within the supported numeric range.");
-            }
-        } else if (displayCurrency != baseCurrency) {
-            throw new IllegalArgumentException("Enter the exchange rate before switching currencies.");
+            require(Double.isFinite(rate) && rate > 0,
+                    "Enter a positive exchange rate within the supported numeric range.");
+        } else {
+            require(displayCurrency == baseCurrency, "Enter the exchange rate before switching currencies.");
         }
         this.guaraniesPerDollar = guaraniesPerDollar;
     }
@@ -45,29 +46,24 @@ public final class CurrencySettings {
     }
 
     public double toBasePrice(BigDecimal amount) {
-        if (amount.signum() < 0) {
-            throw new IllegalArgumentException("Unit price must be a finite number of zero or more.");
-        }
-        double result;
+        require(amount.signum() >= 0, "Unit price must be a finite number of zero or more.");
+        String rangeError = "The converted unit price is outside the supported numeric range.";
         try {
-            result = convert(amount, displayCurrency, baseCurrency).doubleValue();
+            double result = convert(amount, displayCurrency, baseCurrency).doubleValue();
+            require(Double.isFinite(result) && (result > 0 || amount.signum() == 0), rangeError);
+            return result;
         } catch (ArithmeticException error) {
-            throw new IllegalArgumentException("The converted unit price is outside the supported numeric range.", error);
+            throw new IllegalArgumentException(rangeError, error);
         }
-        if (!Double.isFinite(result) || (result == 0 && amount.signum() > 0)) {
-            throw new IllegalArgumentException("The converted unit price is outside the supported numeric range.");
-        }
-        return result;
     }
 
     private BigDecimal convert(BigDecimal amount, SessionCurrency from, SessionCurrency to) {
         if (from == to) {
             return amount;
         }
-        if (from == SessionCurrency.USD) {
-            return amount.multiply(guaraniesPerDollar, MathContext.DECIMAL128);
-        }
-        return amount.divide(guaraniesPerDollar, MathContext.DECIMAL128);
+        return from == SessionCurrency.USD
+                ? amount.multiply(guaraniesPerDollar, MathContext.DECIMAL128)
+                : amount.divide(guaraniesPerDollar, MathContext.DECIMAL128);
     }
 
     public enum SessionCurrency {

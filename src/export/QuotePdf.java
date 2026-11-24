@@ -10,10 +10,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import model.Client;
+import model.CatalogEntry.Client;
 import model.CurrencySettings;
 import model.Quote;
-import model.QuoteItem;
+import model.Quote.Item;
 
 /** Builds the receipt text used by the preview and the PDF exporter. */
 public final class QuotePdf {
@@ -58,7 +58,7 @@ public final class QuotePdf {
                 + "\n\n" + RULE, ""));
 
         int number = 1;
-        for (QuoteItem item : quote.getItems()) {
+        for (Item item : quote.getItems()) {
             List<String> lines = wrap(number++ + ". " + item.getOffering().getName(), "");
             String description = item.getOffering().getDescription();
             if (!description.isEmpty()) {
@@ -141,8 +141,7 @@ public final class QuotePdf {
     }
 
     private static void draw(StringBuilder page, String text, int y, int size, String font) {
-        String latin = new String(text.getBytes(PDF_CHARSET), StandardCharsets.ISO_8859_1);
-        String escaped = latin.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)");
+        String escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)");
         page.append("BT /").append(font).append(' ').append(size).append(" Tf 48 ").append(y)
                 .append(" Td (").append(escaped).append(") Tj ET\n");
     }
@@ -150,18 +149,17 @@ public final class QuotePdf {
     private static byte[] pdfBytes(String title, List<List<String>> pages) {
         List<String> objects = new ArrayList<>();
         objects.add("<< /Type /Catalog /Pages 2 0 R >>");
-        StringBuilder kids = new StringBuilder();
-        for (int i = 0; i < pages.size(); i++) {
-            kids.append(5 + 2 * i).append(" 0 R ");
-        }
-        objects.add("<< /Type /Pages /Kids [" + kids + "] /Count " + pages.size() + " >>");
+        objects.add(""); // Filled in after assigning the page object numbers.
         objects.add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>");
         objects.add("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>");
 
+        StringBuilder kids = new StringBuilder();
         for (int i = 0; i < pages.size(); i++) {
+            int pageNumber = objects.size() + 1;
+            kids.append(pageNumber).append(" 0 R ");
             objects.add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842]"
                     + " /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >>"
-                    + " /Contents " + (6 + 2 * i) + " 0 R >>");
+                    + " /Contents " + (pageNumber + 1) + " 0 R >>");
             StringBuilder content = new StringBuilder();
             draw(content, title, 788, 18, "F2");
             int y = 755;
@@ -170,8 +168,10 @@ public final class QuotePdf {
                 y -= 14;
             }
             draw(content, "Page " + (i + 1) + " / " + pages.size(), 30, 9, "F1");
-            objects.add("<< /Length " + content.length() + " >>\nstream\n" + content + "endstream");
+            String stream = new String(content.toString().getBytes(PDF_CHARSET), StandardCharsets.ISO_8859_1);
+            objects.add("<< /Length " + stream.length() + " >>\nstream\n" + stream + "endstream");
         }
+        objects.set(1, "<< /Type /Pages /Kids [" + kids + "] /Count " + pages.size() + " >>");
 
         // The cross-reference table points to the byte offset of each PDF object.
         StringBuilder file = new StringBuilder("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n");

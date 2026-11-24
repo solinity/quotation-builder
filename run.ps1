@@ -25,11 +25,10 @@ if (-not (Test-Path -LiteralPath $driverPath)) {
 
 $classes = Join-Path $PSScriptRoot "out"
 New-Item -ItemType Directory -Path $classes -Force | Out-Null
-$sources = @((Join-Path $PSScriptRoot "Main.java"))
-$sources += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "src") -Recurse -File -Filter "*.java").FullName
-if ($Test) {
-    $sources += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "test") -File -Filter "*.java").FullName
-}
+$sourceFolders = @((Join-Path $PSScriptRoot "src"))
+if ($Test) { $sourceFolders += Join-Path $PSScriptRoot "test" }
+$sources = @(Join-Path $PSScriptRoot "Main.java") +
+    @(Get-ChildItem -LiteralPath $sourceFolders -Recurse -File -Filter "*.java").FullName
 & javac --release 11 -encoding UTF-8 -d $classes @sources
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -41,11 +40,8 @@ if ($javaVersion -match '^(?:openjdk|java) (\d+)' -and [int]$Matches[1] -ge 24) 
     $runtimeArgs += "--enable-native-access=ALL-UNNAMED"
 }
 
-if ($Test) {
-    & java @runtimeArgs -cp $classpath ModelTest
+if ($Test) { $entryPoints = "ModelTest", "SwingTest" } else { $entryPoints = "Main" }
+foreach ($entryPoint in $entryPoints) {
+    & java @runtimeArgs -cp $classpath $entryPoint
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & java @runtimeArgs -cp $classpath SwingTest
-} else {
-    & java @runtimeArgs -cp $classpath Main
 }
-exit $LASTEXITCODE

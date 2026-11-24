@@ -16,8 +16,8 @@ On the **Quotations** tab, select a saved quotation and click **Open** to see it
 
 ## System design
 
-A freelancer enters client details, offerings, quantities, and discounts through the Swing tabs. Each button calls a method that reads the form, validates the input, and updates the display. The Clients and Offerings tabs inherit their common actions from `CatalogPanel`. The shared `DataStore` keeps clients, offerings, and quotations in `ArrayList` collections.
+A freelancer enters client details, offerings, quantities, and discounts through the Swing tabs. Clients and Offerings share a `CatalogPanel`. The `DataStore` keeps records in `ArrayList` collections.
 
-A `Quote` links one client to a list of `QuoteItem` objects. Each item holds its offering and agreed unit price. The model calculates the item discounts, adds the discounted line totals, and applies the quotation discount. `SessionDatabase` saves those records with JDBC. The preview and PDF export use the same quotation layout and selected currency.
+A `Quote` links a client to its items and applies the quotation discount after the item discounts. Each item keeps its agreed unit price. `SessionDatabase` saves records with JDBC. The preview and PDF share the same content and currency.
 
 Run the model and Swing tests with `powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Test`.

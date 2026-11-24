@@ -8,6 +8,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import javax.imageio.ImageIO;
 import javax.swing.JButton;
@@ -23,9 +26,8 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.text.BadLocationException;
-import model.Client;
-import model.Offering;
+import model.CatalogEntry.Client;
+import model.CatalogEntry.Offering;
 import model.Quote;
 import model.CurrencySettings.SessionCurrency;
 import storage.DataStore;
@@ -77,14 +79,13 @@ public class SwingTest {
         ModelTest.check(list.getModel().getSize() == 3 && field(clients, "Name").getText().isEmpty(),
                 "clients displayed and successful add clears form");
 
-        field(clients, "Search by name").setText(" aLeX rIvErA ");
-        click(clients, "Search");
-        ModelTest.check(list.getModel().getSize() == 2 && list.getModel().getElementAt(1) == store.getClient(1),
+        search(clients, "Search by name", " aLeX rIvErA ");
+        ModelTest.check(list.getModel().getSize() == 2 && list.getModel().getElementAt(1) == store.getClients().get(1),
                 "client search retains both matching objects");
         list.setSelectedIndex(1);
         ModelTest.check(field(clients, "Email (optional)").getText().equals("studio@example.com"),
                 "selection populates the exact client");
-        Client client = store.getClient(1);
+        Client client = store.getClients().get(1);
         field(clients, "Name").setText("Unsaved name");
         field(clients, "Email (optional)").setText("invalid-email");
         expectError(clients, "Update", "Email must contain '@'");
@@ -93,16 +94,15 @@ public class SwingTest {
         field(clients, "Email (optional)").setText("studio@example.com");
         field(clients, "Phone (optional)").setText("555-0199");
         click(clients, "Update");
-        ModelTest.check(store.getClient(1) == client && client.getPhone().equals("555-0199"), "update exact client");
+        ModelTest.check(store.getClients().get(1) == client && client.getPhone().equals("555-0199"), "update exact client");
         click(clients, "Clear Form");
         ModelTest.check(list.isSelectionEmpty() && field(clients, "Name").getText().isEmpty(), "clear client form");
 
         search(clients, "Search by name", "Nobody");
         ModelTest.check(list.getModel().getSize() == 0, "client no-match search");
         click(clients, "Show All");
-        list.setSelectedIndex(2);
-        click(clients, "Delete");
-        ModelTest.check(list.getModel().getSize() == 2 && store.getClient(1) == client, "delete selected client");
+        clickRow(clients, list, 2, "Delete");
+        ModelTest.check(list.getModel().getSize() == 2 && store.getClients().get(1) == client, "delete selected client");
         list.setSelectedIndex(1);
         capture("clients.png");
         System.out.println("PASS Swing client buttons, search, duplicate selection and validation");
@@ -118,7 +118,7 @@ public class SwingTest {
             fillOffering(offerings, "Design", "Example", invalid);
             expectError(offerings, "Add Offering", "finite number");
         }
-        ModelTest.check(store.getOfferingCount() == 0, "invalid offerings were never added");
+        ModelTest.check(store.getOfferings().size() == 0, "invalid offerings were never added");
         fillOffering(offerings, "", "", "15");
         expectError(offerings, "Add Offering", "Enter an offering name");
 
@@ -133,14 +133,14 @@ public class SwingTest {
         list.setSelectedIndex(1);
         ModelTest.check(description.getText().equals(originalDescription),
                 "selecting the exact offering restores its line breaks");
-        Offering offering = store.getOffering(1);
+        Offering offering = store.getOfferings().get(1);
         fillOffering(offerings, "Unsaved name", "Invalid change", "-2");
         expectError(offerings, "Update", "finite number");
         ModelTest.check(offering.getName().equals("Design") && offering.getUnitPrice() == 120, "offering edit is atomic");
         String updatedDescription = "Brand package\nIncludes a review of the logo, typography, and color palette.";
         fillOffering(offerings, "Design", updatedDescription, "120");
         click(offerings, "Update");
-        ModelTest.check(store.getOffering(1) == offering && offering.getDescription().equals(updatedDescription),
+        ModelTest.check(store.getOfferings().get(1) == offering && offering.getDescription().equals(updatedDescription),
                 "updating the exact offering saves its line breaks");
         click(offerings, "Clear Form");
         ModelTest.check(list.isSelectionEmpty() && description.getText().isEmpty()
@@ -148,9 +148,8 @@ public class SwingTest {
         search(offerings, "Search by name", "Missing");
         ModelTest.check(list.getModel().getSize() == 0, "offering no-match search");
         click(offerings, "Show All");
-        list.setSelectedIndex(3);
-        click(offerings, "Delete");
-        ModelTest.check(store.getOfferingCount() == 3 && store.getOffering(1) == offering, "delete selected offering");
+        clickRow(offerings, list, 3, "Delete");
+        ModelTest.check(store.getOfferings().size() == 3 && store.getOfferings().get(1) == offering, "delete selected offering");
         list.setSelectedIndex(1);
         ModelTest.check(description.getText().equals(updatedDescription), "reselection restores the edited description");
         capture("offerings.png");
@@ -176,7 +175,7 @@ public class SwingTest {
         expectError(quotes, "Save Quote", "Select a client");
         clients.setText(" rIv ");
         ModelTest.check(matches(clients).getModel().getSize() == 2, "client search matches partial duplicate names");
-        choose(clients, " rIv ", store.getClient(1));
+        choose(clients, " rIv ", store.getClients().get(1));
         ModelTest.check(clients.getText().contains("studio@example.com"), "selection displays the exact client");
         click(quotes, "Calculate");
         label(quotes, "Subtotal: USD 0.00");
@@ -185,7 +184,7 @@ public class SwingTest {
         offerings.setText("eSIG");
         ModelTest.check(matches(offerings).getModel().getSize() == 2, "offering search matches partial duplicate names");
         expectError(quotes, "Add Item", "Select an offering");
-        choose(offerings, "eSIG", store.getOffering(1));
+        choose(offerings, "eSIG", store.getOfferings().get(1));
         ModelTest.check(offerings.getText().contains("Brand package Includes a review"),
                 "selection displays the exact offering with a single-line description preview");
         for (String invalid : new String[] {"abc", "0", "-1", "NaN", "Infinity", "1e308"}) {
@@ -233,8 +232,8 @@ public class SwingTest {
         expectError(quotes, "Save Quote", "Status can't be empty");
         statuses.setSelectedItem(Quote.Status.SENT);
         click(quotes, "Save Quote");
-        Quote quote = store.getQuote(0);
-        ModelTest.check(quote.getClient() == store.getClient(1) && quote.getItems().get(0).getOffering() == store.getOffering(1),
+        Quote quote = store.getQuotes().get(0);
+        ModelTest.check(quote.getClient() == store.getClients().get(1) && quote.getItems().get(0).getOffering() == store.getOfferings().get(1),
                 "saved quotation uses the selected client and offering objects");
         ModelTest.check(quote.getStatus() == Quote.Status.SENT && quote.getTotal() == 263.25
                 && quote.getItems().get(1).getDiscountPercent() == 12.5, "saved quote totals, status and item discount");
@@ -242,7 +241,7 @@ public class SwingTest {
         click(quotes, "New Quote");
         ModelTest.check(items.getModel().getSize() == 0 && clients.getText().isEmpty() && offerings.getText().isEmpty(),
                 "new quote clears editor");
-        choose(clients, "Alex", store.getClient(0));
+        choose(clients, "Alex", store.getClients().get(0));
         addItem(quotes, 0, "1.5");
         click(quotes, "Save Quote");
         search(quotes, "Search by client name", "missing");
@@ -280,19 +279,18 @@ public class SwingTest {
         ModelTest.check(quote.getItems().size() == 2 && quote.getStatus() == Quote.Status.SENT,
                 "draft changes stay separate from saved quote");
         click(quotes, "Save Quote");
-        ModelTest.check(store.getQuote(0) == quote && quote.getTotal() == 180 && quote.getItems().size() == 1
+        ModelTest.check(store.getQuotes().get(0) == quote && quote.getTotal() == 180 && quote.getItems().size() == 1
                 && quote.getStatus() == Quote.Status.ACCEPTED && quote.getDate().equals(LocalDate.of(2026, 11, 24)),
                 "save updates the same quotation");
-        saved.setSelectedIndex(1);
-        click(quotes, "Delete Quote");
-        ModelTest.check(store.getQuoteCount() == 1 && store.getQuote(0) == quote, "delete selected saved quote");
+        clickRow(quotes, saved, 1, "Delete Quote");
+        ModelTest.check(store.getQuotes().size() == 1 && store.getQuotes().get(0) == quote, "delete selected saved quote");
         System.out.println("PASS Swing quotation buttons, totals, reopen, update, and invalid input");
     }
 
     private void testCurrencySettings() {
         Component quotes = tab("Quotations");
         JTextField selectedOffering = field(quotes, "Offering");
-        choose(selectedOffering, "Design", store.getOffering(1));
+        choose(selectedOffering, "Design", store.getOfferings().get(1));
         Component settings = tab("Settings");
         JComboBox<?> currency = combo(settings, "Currency");
         JTextField rate = field(settings, "Guaran\u00edes per 1 USD");
@@ -320,7 +318,7 @@ public class SwingTest {
                 && rowText(list(quotes, "Saved quotations"), 0).contains("PYG 1.350.000")
                 && rowText(list(quotes, "Quotation items"), 0).contains("PYG 900.000 = PYG 1.800.000"),
                 "selected offering, saved quote and line prices convert");
-        ModelTest.check(store.getQuote(0).getTotal() == 180 && store.getOffering(1).getUnitPrice() == 120,
+        ModelTest.check(store.getQuotes().get(0).getTotal() == 180 && store.getOfferings().get(1).getUnitPrice() == 120,
                 "changing currency retains all numeric amounts");
         capture("quotations-pyg.png");
 
@@ -332,10 +330,10 @@ public class SwingTest {
         tab("Quotations");
         label(quotes, "Total: PYG 1.440.000 (25.0% discount)");
         tab("Offerings");
-        ModelTest.check(guaraniesPrice.getText().equals("1000000") && store.getOffering(1).getUnitPrice() == 120,
+        ModelTest.check(guaraniesPrice.getText().equals("1000000") && store.getOfferings().get(1).getUnitPrice() == 120,
                 "rate changes convert pending price edits without saving them");
         click(offerings, "Update");
-        ModelTest.check(store.getOffering(1).getUnitPrice() == 125 && store.getQuote(0).getTotal() == 180,
+        ModelTest.check(store.getOfferings().get(1).getUnitPrice() == 125 && store.getQuotes().get(0).getTotal() == 180,
                 "updating in PYG stores the equivalent USD and preserves quoted prices");
         tab("Quotations");
         list(quotes, "Saved quotations").setSelectedIndex(0);
@@ -351,14 +349,14 @@ public class SwingTest {
     }
 
     private void testRelationshipChanges() {
-        Quote quote = store.getQuote(0);
+        Quote quote = store.getQuotes().get(0);
         Component clients = tab("Clients");
         JList<?> clientList = list(clients, "Registered clients");
         clientList.setSelectedIndex(1);
         expectError(clients, "Delete", "used by a saved quotation");
         field(clients, "Name").setText("Alex Rivera Studio");
         click(clients, "Update");
-        ModelTest.check(quote.getClient() == store.getClient(1) && quote.getClient().getName().equals("Alex Rivera Studio"),
+        ModelTest.check(quote.getClient() == store.getClients().get(1) && quote.getClient().getName().equals("Alex Rivera Studio"),
                 "client edit is visible in existing quotation");
 
         Component offerings = tab("Offerings");
@@ -384,24 +382,20 @@ public class SwingTest {
         // A draft alone does not prevent another tab from deleting its offering.
         addItem(quotes, 2, "1");
         tab("Offerings");
-        offeringList.setSelectedIndex(2);
-        click(offerings, "Delete");
+        clickRow(offerings, offeringList, 2, "Delete");
         tab("Quotations");
         ModelTest.check(field(quotes, "Offering").getText().isEmpty(), "deleted offering is no longer selected");
         expectError(quotes, "Save Quote", "offering that was deleted");
         ModelTest.check(quote.getItems().size() == 1, "stale draft cannot replace saved quote");
-        saved.setSelectedIndex(0);
-        click(quotes, "Edit");
+        clickRow(quotes, saved, 0, "Edit");
         label(quotes, "Subtotal: USD 240.00");
         click(quotes, "Delete Quote");
-        ModelTest.check(store.getQuoteCount() == 0, "delete opened quotation");
+        ModelTest.check(store.getQuotes().size() == 0, "delete opened quotation");
         tab("Offerings");
-        offeringList.setSelectedIndex(1);
-        click(offerings, "Delete");
+        clickRow(offerings, offeringList, 1, "Delete");
         tab("Clients");
-        clientList.setSelectedIndex(1);
-        click(clients, "Delete");
-        ModelTest.check(store.getOfferingCount() == 1 && store.getClientCount() == 1,
+        clickRow(clients, clientList, 1, "Delete");
+        ModelTest.check(store.getOfferings().size() == 1 && store.getClients().size() == 1,
                 "deleting quotation releases client and offering");
         System.out.println("PASS cross-tab refresh, shared identities, price history and reference protection");
     }
@@ -436,7 +430,7 @@ public class SwingTest {
     }
 
     private void addItem(Component panel, int offeringIndex, String quantity) {
-        Offering offering = store.getOffering(offeringIndex);
+        Offering offering = store.getOfferings().get(offeringIndex);
         choose(field(panel, "Offering"), offering.getName(), offering);
         field(panel, "Quantity / hours").setText(quantity);
         click(panel, "Add Item");
@@ -468,61 +462,50 @@ public class SwingTest {
         find(panel, JButton.class, found -> button.equals(found.getText())).doClick(0);
     }
 
+    private static void clickRow(Component panel, JList<?> list, int index, String button) {
+        list.setSelectedIndex(index);
+        click(panel, button);
+    }
+
     private static void expectError(Component panel, String button, String expectedMessage) {
-        String[] message = {null};
-        Timer closeDialog = new Timer(50, event -> {
-            for (Window window : Window.getWindows()) {
-                if (window instanceof JDialog && window.isShowing()) {
-                    JOptionPane dialog = search(window, JOptionPane.class, pane -> true);
-                    if (dialog != null) {
-                        message[0] = String.valueOf(dialog.getMessage());
-                        dialog.setValue(JOptionPane.OK_OPTION);
-                    }
-                }
-            }
-        });
-        closeDialog.start();
-        try {
-            click(panel, button);
-        } finally {
-            closeDialog.stop();
-        }
-        ModelTest.check(message[0] != null && message[0].contains(expectedMessage),
-                button + " should show " + expectedMessage + ", got " + message[0]);
+        String message = inspectDialog(panel, button,
+                dialog -> String.valueOf(find(dialog, JOptionPane.class, pane -> true).getMessage()));
+        ModelTest.check(message.contains(expectedMessage), button + " should show " + expectedMessage + ", got " + message);
     }
 
     private String openQuotationPreview(Component quotes, String screenshot) {
-        String[] text = {null};
-        boolean[] readOnly = {false};
-        Timer closePreview = new Timer(50, event -> {
-            for (Window window : frame.getOwnedWindows()) {
+        return inspectDialog(quotes, "Open", dialog -> {
+            JEditorPane document = find(dialog, JEditorPane.class, pane -> true);
+            ModelTest.check(!document.isEditable(), "Open shows a read-only quote window");
+            String text = document.getText().replaceAll("\\s+", " ");
+            capture(dialog.getContentPane(), screenshot);
+            click(dialog, "Close");
+            return text;
+        });
+    }
+
+    private static <T> T inspectDialog(Component panel, String button, Function<JDialog, T> inspect) {
+        List<T> result = new ArrayList<>();
+        Timer timer = new Timer(50, event -> {
+            for (Window window : SwingUtilities.getWindowAncestor(panel).getOwnedWindows()) {
                 if (window instanceof JDialog && window.isShowing()) {
-                    JDialog dialog = (JDialog) window;
                     try {
-                        JEditorPane document = search(dialog, JEditorPane.class, pane -> true);
-                        if (document != null) {
-                            readOnly[0] = !document.isEditable();
-                            text[0] = document.getDocument().getText(0, document.getDocument().getLength())
-                                    .replaceAll("\\s+", " ");
-                            capture(dialog.getContentPane(), screenshot);
-                        }
-                        click(dialog, "Close");
-                    } catch (BadLocationException error) {
-                        throw new AssertionError("Could not read quotation details", error);
+                        result.add(inspect.apply((JDialog) window));
                     } finally {
-                        dialog.dispose();
+                        window.dispose();
                     }
+                    return;
                 }
             }
         });
-        closePreview.start();
+        timer.start();
         try {
-            click(quotes, "Open");
+            click(panel, button);
         } finally {
-            closePreview.stop();
+            timer.stop();
         }
-        ModelTest.check(text[0] != null && readOnly[0], "Open shows a read-only quote window");
-        return text[0];
+        ModelTest.check(!result.isEmpty(), button + " opens the expected dialog");
+        return result.get(0);
     }
 
     private static JTextField field(Component panel, String name) {
@@ -534,9 +517,7 @@ public class SwingTest {
     }
 
     private static JLabel label(Component panel, String text) {
-        JLabel label = search(panel, JLabel.class, found -> text.equals(found.getText()));
-        ModelTest.check(label != null, "visible label " + text);
-        return label;
+        return find(panel, JLabel.class, found -> text.equals(found.getText()));
     }
 
     private static JList<?> list(Component panel, String name) {
