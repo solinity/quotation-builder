@@ -13,6 +13,7 @@ import javax.imageio.ImageIO;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
+import javax.swing.JEditorPane;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -22,6 +23,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.text.BadLocationException;
 import model.Client;
 import model.Offering;
 import model.Quote;
@@ -163,6 +165,7 @@ public class SwingTest {
         JTextField offerings = field(quotes, "Offering");
         JComboBox<?> statuses = combo(quotes, "Status");
         expectError(quotes, "Open", "Select a saved quotation");
+        expectError(quotes, "Edit", "Select a saved quotation");
         expectError(quotes, "Delete Quote", "Select a saved quotation");
         expectError(quotes, "Remove Item", "Select a quotation item");
         expectError(quotes, "Add Item", "Select an offering");
@@ -247,18 +250,27 @@ public class SwingTest {
         search(quotes, "Search by client name", " ALEX RIVERA ");
         ModelTest.check(saved.getModel().getSize() == 2, "saved quotes search returns both duplicate client names");
         saved.setSelectedIndex(0);
-        click(quotes, "Open");
+        date.setText("2026-12-01");
+        String preview = openQuotationPreview(quotes, "quotation-details.png");
+        for (String detail : new String[] {"Quotation #1", "2026-11-23", "SENT", "Alex Rivera",
+                "studio@example.com", "555-0199", "Design", "Includes a review", "Consultation", "USD 120.00",
+                "12.5%", "USD 52.50", "Subtotal", "USD 292.50", "Quote discount (10%)", "USD 29.25", "USD 263.25"}) {
+            ModelTest.check(preview.contains(detail), "quotation preview shows " + detail);
+        }
+        ModelTest.check(date.getText().equals("2026-12-01") && items.getModel().getSize() == 1,
+                "preview keeps the open editor and unsaved edits");
+        click(quotes, "Edit");
         ModelTest.check(items.getModel().getSize() == 2 && clients.getText().contains(quote.getClient().getEmail()),
-                "open restores the selected quotation");
+                "edit restores the selected quotation");
         ModelTest.check(date.getText().equals("2026-11-23") && statuses.getSelectedItem() == Quote.Status.SENT
-                && discount.getText().equals("10.0"), "open restores date, status and discount");
+                && discount.getText().equals("10.0"), "edit restores date, status and discount");
         label(quotes, "Total: USD 263.25 (10.0% discount)");
         click(quotes, "Show All");
         capture("quotations.png");
 
         clients.setText("Alex");
         expectError(quotes, "Save Quote", "Select a client");
-        click(quotes, "Open");
+        click(quotes, "Edit");
         date.setText("2026-11-24");
         discount.setText("25");
         statuses.setSelectedItem(Quote.Status.ACCEPTED);
@@ -324,6 +336,11 @@ public class SwingTest {
         click(offerings, "Update");
         ModelTest.check(store.getOffering(1).getUnitPrice() == 125 && store.getQuote(0).getTotal() == 180,
                 "updating in PYG stores the equivalent USD and preserves quoted prices");
+        tab("Quotations");
+        list(quotes, "Saved quotations").setSelectedIndex(0);
+        String preview = openQuotationPreview(quotes, "quotation-details-pyg.png");
+        ModelTest.check(preview.contains("PYG 960.000") && preview.contains("PYG 1.440.000"),
+                "preview converts the original quoted price and total using the current exchange rate");
 
         tab("Settings");
         currency.setSelectedItem(SessionCurrency.USD);
@@ -373,7 +390,7 @@ public class SwingTest {
         expectError(quotes, "Save Quote", "offering that was deleted");
         ModelTest.check(quote.getItems().size() == 1, "stale draft cannot replace saved quote");
         saved.setSelectedIndex(0);
-        click(quotes, "Open");
+        click(quotes, "Edit");
         label(quotes, "Subtotal: USD 240.00");
         click(quotes, "Delete Quote");
         ModelTest.check(store.getQuoteCount() == 0, "delete opened quotation");
@@ -473,6 +490,40 @@ public class SwingTest {
                 button + " should show " + expectedMessage + ", got " + message[0]);
     }
 
+    private String openQuotationPreview(Component quotes, String screenshot) {
+        String[] text = {null};
+        boolean[] readOnly = {false};
+        Timer closePreview = new Timer(50, event -> {
+            for (Window window : frame.getOwnedWindows()) {
+                if (window instanceof JDialog && window.isShowing()) {
+                    JDialog dialog = (JDialog) window;
+                    try {
+                        JEditorPane document = search(dialog, JEditorPane.class, pane -> true);
+                        if (document != null) {
+                            readOnly[0] = !document.isEditable();
+                            text[0] = document.getDocument().getText(0, document.getDocument().getLength())
+                                    .replaceAll("\\s+", " ");
+                            capture(dialog.getContentPane(), screenshot);
+                        }
+                        click(dialog, "Close");
+                    } catch (BadLocationException error) {
+                        throw new AssertionError("Could not read quotation details", error);
+                    } finally {
+                        dialog.dispose();
+                    }
+                }
+            }
+        });
+        closePreview.start();
+        try {
+            click(quotes, "Open");
+        } finally {
+            closePreview.stop();
+        }
+        ModelTest.check(text[0] != null && readOnly[0], "Open shows a read-only quote window");
+        return text[0];
+    }
+
     private static JTextField field(Component panel, String name) {
         return (JTextField) label(panel, name).getLabelFor();
     }
@@ -518,11 +569,14 @@ public class SwingTest {
     }
 
     private void capture(String filename) {
+        frame.validate();
+        capture(frame.getContentPane(), filename);
+    }
+
+    private void capture(Container content, String filename) {
         if (screenshots == null) {
             return;
         }
-        frame.validate();
-        Container content = frame.getContentPane();
         BufferedImage image = new BufferedImage(content.getWidth(), content.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
         try {

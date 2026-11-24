@@ -12,4 +12,6 @@ Use **File → Save Session** to write your clients, offerings, and saved quotat
 
 In **Settings**, enter how many guaraníes equal 1 US dollar under **Guaraníes per 1 USD**, then click **Apply**. Choose **Currency** to view and enter prices in USD or PYG. **Save Session** stores the rate and currency with the session.
 
+On the **Quotations** tab, select a saved quotation and click **Open** to see its client information, line items, discounts, and total in a separate window. Click **Edit** to load the quotation into the editor.
+
 Run the model and Swing tests with `powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Test`.

@@ -16,6 +16,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
 import model.Client;
 import model.Offering;
 import model.Quote;
@@ -88,10 +89,13 @@ public class QuotesPanel extends JPanel {
 
         JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
         JButton open = new JButton("Open");
+        JButton edit = new JButton("Edit");
         JButton delete = new JButton("Delete Quote");
         open.addActionListener(event -> openQuote());
+        edit.addActionListener(event -> editQuote());
         delete.addActionListener(event -> deleteQuote());
         recordButtons.add(open);
+        recordButtons.add(edit);
         recordButtons.add(delete);
 
         JPanel saved = new JPanel(new BorderLayout(0, 5));
@@ -246,6 +250,17 @@ public class QuotesPanel extends JPanel {
         Quote selected = quoteList.getSelectedValue();
         if (selected == null) {
             showError("Select a saved quotation to open.");
+            return;
+        }
+        QuoteDialog dialog = new QuoteDialog(SwingUtilities.getWindowAncestor(this),
+                dataStore.getQuoteNumber(selected), selected, dataStore.getCurrencySettings());
+        dialog.setVisible(true);
+    }
+
+    private void editQuote() {
+        Quote selected = quoteList.getSelectedValue();
+        if (selected == null) {
+            showError("Select a saved quotation to edit.");
             return;
         }
         loadQuote(selected);
