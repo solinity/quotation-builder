@@ -1,7 +1,6 @@
 package ui;
 
 import java.awt.Component;
-import java.util.Locale;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JList;
 import model.Client;
@@ -57,8 +56,7 @@ class RecordRenderer extends DefaultListCellRenderer {
         return "";
     }
 
-    static String amount(double value) {
-        String format = value >= 1.0e12 ? "%.2e" : "%.2f";
-        return String.format(Locale.ROOT, format, value);
+    private String amount(double value) {
+        return dataStore.getCurrencySettings().format(value);
     }
 }

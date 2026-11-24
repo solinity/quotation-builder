@@ -1,4 +1,5 @@
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -9,9 +10,11 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Base64;
 import model.Client;
+import model.CurrencySettings;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
+import model.SessionCurrency;
 import storage.DataStore;
 import storage.SessionDatabase;
 
@@ -177,7 +180,10 @@ public class ModelTest {
         try {
             DataStore store = new DataStore();
             SessionDatabase.save(file, store);
-            check(SessionDatabase.load(file).getQuoteCount() == 0, "empty session round trip");
+            DataStore empty = SessionDatabase.load(file);
+            check(empty.getQuoteCount() == 0
+                    && empty.getCurrencySettings().getDisplayCurrency() == SessionCurrency.USD, "empty session defaults");
+            rejects(() -> new CurrencySettings(SessionCurrency.USD, SessionCurrency.PYG, null), "switching without a rate");
 
             Client client = new Client("Alex", "studio@example.com", "123");
             store.addClient(new Client("Alex", "other@example.com", ""));
@@ -195,7 +201,25 @@ public class ModelTest {
             store.addQuote(quote);
             SessionDatabase.save(file, store);
 
+            try (Connection database = DriverManager.getConnection("jdbc:sqlite:" + file.toUri().toASCIIString());
+                    Statement sql = database.createStatement()) {
+                sql.execute("DROP TABLE session_settings");
+                sql.execute("PRAGMA user_version = 1");
+            }
+            DataStore previous = SessionDatabase.load(file);
+            check(previous.getCurrencySettings().getBaseCurrency() == SessionCurrency.USD
+                    && previous.getQuote(0).getTotal() == 135,
+                    "older SQLite databases open in USD");
+
+            BigDecimal rate = new BigDecimal("7500.25");
+            store.setCurrencySettings(new CurrencySettings(SessionCurrency.USD, SessionCurrency.PYG, rate));
+            SessionDatabase.save(file, store);
             DataStore loaded = SessionDatabase.load(file);
+            CurrencySettings settings = loaded.getCurrencySettings();
+            check(settings.getDisplayCurrency() == SessionCurrency.PYG && settings.getBaseCurrency() == SessionCurrency.USD
+                    && settings.getGuaraniesPerDollar().equals(rate)
+                    && settings.displayAmount(120).compareTo(new BigDecimal("900030")) == 0,
+                    "saving upgrades the database and persists the exact exchange rate");
             Quote restored = loaded.getQuote(0);
             check(loaded.getClientCount() == 2 && restored.getClient() == loaded.getClient(1)
                     && restored.getClient().getEmail().equals("studio@example.com")
@@ -210,14 +234,37 @@ public class ModelTest {
                     && restored.getTotal() == 135, "session retains quotation state and agreed pricing");
 
             store.getClient(0).setName("Unsaved change");
+            store.setCurrencySettings(new CurrencySettings(SessionCurrency.USD, SessionCurrency.USD, new BigDecimal("8000")));
             quote.setClient(new Client("Unregistered", "", ""));
             rejectsFileOperation(() -> SessionDatabase.save(file, store), "save with invalid reference");
             DataStore saved = SessionDatabase.load(file);
-            check(saved.getClient(0).getName().equals("Alex") && saved.getQuote(0).getTotal() == 135,
+            check(saved.getCurrencySettings().getDisplayCurrency() == SessionCurrency.PYG
+                    && saved.getCurrencySettings().getGuaraniesPerDollar().equals(rate)
+                    && saved.getClient(0).getName().equals("Alex") && saved.getQuote(0).getTotal() == 135,
                     "failed transaction preserves the previous database");
             store.replaceWith(loaded);
-            check(store.getQuote(0) == restored && store.isOfferingReferenced(store.getOffering(1)),
-                    "installed session keeps restored record relationships");
+            check(store.getCurrencySettings() == settings && store.getQuote(0) == restored
+                    && store.isOfferingReferenced(store.getOffering(1)), "installed session restores currency and links");
+
+            try (Connection database = DriverManager.getConnection("jdbc:sqlite:" + file.toUri().toASCIIString());
+                    Statement sql = database.createStatement()) {
+                sql.execute("DROP TABLE session_settings");
+                sql.execute("CREATE TABLE session_settings (id INTEGER PRIMARY KEY, currency TEXT NOT NULL) STRICT");
+                sql.execute("INSERT INTO session_settings VALUES (1, 'PYG')");
+                sql.execute("PRAGMA user_version = 2");
+            }
+            DataStore previousGuaranies = SessionDatabase.load(file);
+            CurrencySettings previousSettings = previousGuaranies.getCurrencySettings();
+            check(previousSettings.getBaseCurrency() == SessionCurrency.PYG
+                    && previousSettings.getDisplayCurrency() == SessionCurrency.PYG
+                    && previousSettings.getGuaraniesPerDollar() == null, "older PYG sessions keep their original amounts");
+            previousGuaranies.setCurrencySettings(new CurrencySettings(SessionCurrency.PYG, SessionCurrency.USD,
+                    new BigDecimal("6000")));
+            SessionDatabase.save(file, previousGuaranies);
+            CurrencySettings reversed = SessionDatabase.load(file).getCurrencySettings();
+            check(reversed.displayAmount(120).compareTo(new BigDecimal("0.02")) == 0
+                    && reversed.toBasePrice(new BigDecimal("0.02")) == 120,
+                    "upgrading an older PYG session converts in both directions");
 
             try (Connection database = DriverManager.getConnection("jdbc:sqlite:" + file.toUri().toASCIIString());
                     Statement sql = database.createStatement()) {
@@ -243,7 +290,8 @@ public class ModelTest {
             Files.delete(file);
             SessionDatabase.save(file, imported);
             DataStore converted = SessionDatabase.load(file);
-            check(converted.getQuote(0).getClient() == converted.getClient(0)
+            check(converted.getCurrencySettings().getBaseCurrency() == SessionCurrency.USD
+                    && converted.getQuote(0).getClient() == converted.getClient(0)
                     && converted.getQuote(0).getTotal() == 135
                     && converted.getOffering(0).getDescription().equals("Line one\nLine two"),
                     "a legacy session imports into SQLite with relationships and pricing");

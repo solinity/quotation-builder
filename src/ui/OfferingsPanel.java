@@ -3,6 +3,7 @@ package ui;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.KeyboardFocusManager;
+import java.math.BigDecimal;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -14,6 +15,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import model.CurrencySettings;
 import model.Offering;
 import storage.DataStore;
 
@@ -28,6 +30,10 @@ public class OfferingsPanel extends JPanel {
     private final JLabel listStatus = new JLabel();
     private final DefaultListModel<Offering> offeringModel = new DefaultListModel<>();
     private final JList<Offering> offeringList = new JList<>(offeringModel);
+    private JLabel priceLabel;
+    private CurrencySettings priceSettings;
+    private String displayedPrice;
+    private double displayedBasePrice;
     private String activeSearch = "";
 
     public OfferingsPanel(DataStore dataStore) {
@@ -58,7 +64,8 @@ public class OfferingsPanel extends JPanel {
         FormPanel form = new FormPanel();
         form.addField("Name", nameField);
         form.addField("Description (optional)", descriptionScroll).setLabelFor(descriptionField);
-        form.addField("Unit price", priceField);
+        priceLabel = form.addField("Unit price", priceField);
+        refreshCurrency();
 
         JButton add = new JButton("Add Offering");
         JButton update = new JButton("Update");
@@ -105,13 +112,19 @@ public class OfferingsPanel extends JPanel {
     }
 
     private Offering readOfferingForm() {
-        double price;
-        try {
-            price = Double.parseDouble(priceField.getText().trim());
-        } catch (NumberFormatException error) {
-            throw new IllegalArgumentException("Enter a numerical unit price, such as 50.00.");
+        return new Offering(nameField.getText(), descriptionField.getText(), readBasePrice());
+    }
+
+    private double readBasePrice() {
+        String price = priceField.getText().strip();
+        if (price.equals(displayedPrice)) {
+            return displayedBasePrice;
         }
-        return new Offering(nameField.getText(), descriptionField.getText(), price);
+        try {
+            return priceSettings.toBasePrice(new BigDecimal(price));
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException("Enter a finite number for the unit price, such as 50.00.");
+        }
     }
 
     private void addOffering() {
@@ -165,8 +178,14 @@ public class OfferingsPanel extends JPanel {
             nameField.setText(selected.getName());
             descriptionField.setText(selected.getDescription());
             descriptionField.setCaretPosition(0);
-            priceField.setText(Double.toString(selected.getUnitPrice()));
+            showPrice(selected.getUnitPrice());
         }
+    }
+
+    private void showPrice(double basePrice) {
+        displayedBasePrice = basePrice;
+        displayedPrice = dataStore.getCurrencySettings().displayAmount(basePrice).stripTrailingZeros().toPlainString();
+        priceField.setText(displayedPrice);
     }
 
     private void clearForm() {
@@ -174,6 +193,7 @@ public class OfferingsPanel extends JPanel {
         nameField.setText("");
         descriptionField.setText("");
         priceField.setText("");
+        displayedPrice = null;
     }
 
     private void searchOfferings() {
@@ -189,6 +209,22 @@ public class OfferingsPanel extends JPanel {
     void resetForSession() {
         clearForm();
         showAllOfferings();
+        refreshCurrency();
+    }
+
+    void refreshCurrency() {
+        CurrencySettings updated = dataStore.getCurrencySettings();
+        if (priceSettings != null && priceSettings != updated && !priceField.getText().isBlank()) {
+            try {
+                showPrice(readBasePrice());
+            } catch (IllegalArgumentException error) {
+                // Keep invalid input available for correction.
+                displayedPrice = null;
+            }
+        }
+        priceSettings = updated;
+        priceLabel.setText("Unit price (" + updated.getDisplayCurrency().name() + ")");
+        offeringList.repaint();
     }
 
     void refreshOfferingList() {

@@ -6,14 +6,17 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Function;
 import model.Client;
+import model.CurrencySettings;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
+import model.SessionCurrency;
 
 public class DataStore {
     private final ArrayList<Client> clients = new ArrayList<>();
     private final ArrayList<Offering> offerings = new ArrayList<>();
     private final ArrayList<Quote> quotes = new ArrayList<>();
+    private CurrencySettings currencySettings = new CurrencySettings(SessionCurrency.USD, SessionCurrency.USD, null);
 
     public void replaceWith(DataStore source) {
         Objects.requireNonNull(source);
@@ -24,7 +27,16 @@ public class DataStore {
             offerings.addAll(source.offerings);
             quotes.clear();
             quotes.addAll(source.quotes);
+            currencySettings = source.currencySettings;
         }
+    }
+
+    public CurrencySettings getCurrencySettings() {
+        return currencySettings;
+    }
+
+    public void setCurrencySettings(CurrencySettings currencySettings) {
+        this.currencySettings = Objects.requireNonNull(currencySettings);
     }
 
     public void addClient(Client client) {

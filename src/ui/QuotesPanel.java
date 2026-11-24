@@ -173,6 +173,7 @@ public class QuotesPanel extends JPanel {
         refreshQuoteList();
         refreshEditorMode();
         itemList.repaint();
+        showTotals();
     }
 
     private void addItem() {
@@ -342,8 +343,8 @@ public class QuotesPanel extends JPanel {
         double subtotal = draft == null ? 0 : draft.getSubtotal();
         double total = draft == null ? 0 : draft.getTotal();
         double discount = draft == null ? 0 : draft.getDiscountPercent();
-        subtotalLabel.setText("Subtotal: " + RecordRenderer.amount(subtotal));
-        totalLabel.setText("Total: " + RecordRenderer.amount(total) + " (" + discount + "% discount)");
+        subtotalLabel.setText("Subtotal: " + dataStore.getCurrencySettings().format(subtotal));
+        totalLabel.setText("Total: " + dataStore.getCurrencySettings().format(total) + " (" + discount + "% discount)");
     }
 
     private void searchQuotes() {

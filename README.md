@@ -10,4 +10,6 @@ The first run downloads the pinned SQLite JDBC driver into `lib`. Later runs use
 
 Use **File → Save Session** to write your clients, offerings, and saved quotations to a `.sqlite` database. **File → Load Session** opens either a `.sqlite` database or a legacy `.qbs` session. After opening a `.qbs` file, **Save Session** creates a separate SQLite database. **Help → Show Session File Location** shows the active file’s path.
 
+In **Settings**, enter how many guaraníes equal 1 US dollar under **Guaraníes per 1 USD**, then click **Apply**. Choose **Currency** to view and enter prices in USD or PYG. **Save Session** stores the rate and currency with the session.
+
 Run the model and Swing tests with `powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Test`.

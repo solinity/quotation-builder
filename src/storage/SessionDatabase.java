@@ -1,6 +1,7 @@
 package storage;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -16,14 +17,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import model.Client;
+import model.CurrencySettings;
 import model.Offering;
 import model.Quote;
 import model.QuoteItem;
+import model.SessionCurrency;
 
 public final class SessionDatabase {
     public static final String EXTENSION = ".sqlite";
     private static final int APPLICATION_ID = 0x51425344; // QBSD
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 3;
 
     private SessionDatabase() {
     }
@@ -51,9 +54,12 @@ public final class SessionDatabase {
 
         try (Connection database = open(file, "ro"); Statement sql = database.createStatement()) {
             database.setAutoCommit(false);
-            checkSchema(sql);
+            int version = checkSchema(sql);
 
             DataStore data = new DataStore();
+            if (version >= 2) {
+                data.setCurrencySettings(readCurrencySettings(sql, version));
+            }
             Map<Long, Client> clients = readClients(sql, data);
             Map<Long, Offering> offerings = readOfferings(sql, data);
             readQuotes(sql, data, clients, offerings);
@@ -78,12 +84,13 @@ public final class SessionDatabase {
                 if (newFile) {
                     createSchema(sql);
                 } else {
-                    checkSchema(sql);
+                    upgradeSettingsTable(sql, checkSchema(sql));
                     sql.executeUpdate("DELETE FROM quotations");
                     sql.executeUpdate("DELETE FROM offerings");
                     sql.executeUpdate("DELETE FROM clients");
                 }
 
+                writeCurrencySettings(database, data.getCurrencySettings());
                 writeClients(database, data);
                 writeOfferings(database, data);
                 writeQuotes(database, data);
@@ -103,7 +110,6 @@ public final class SessionDatabase {
 
     private static void createSchema(Statement sql) throws SQLException {
         sql.execute("PRAGMA application_id = " + APPLICATION_ID);
-        sql.execute("PRAGMA user_version = " + SCHEMA_VERSION);
         sql.execute("CREATE TABLE clients ("
                 + "id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, phone TEXT NOT NULL) STRICT");
         sql.execute("CREATE TABLE offerings ("
@@ -124,18 +130,69 @@ public final class SessionDatabase {
                 + " PRIMARY KEY (quotation_id, line_number)) STRICT");
         sql.execute("CREATE INDEX quotations_client_id ON quotations(client_id)");
         sql.execute("CREATE INDEX quotation_items_offering_id ON quotation_items(offering_id)");
+        createSettingsTable(sql);
     }
 
-    private static void checkSchema(Statement sql) throws SQLException, IOException {
+    private static void createSettingsTable(Statement sql) throws SQLException {
+        sql.execute("CREATE TABLE session_settings (id INTEGER PRIMARY KEY CHECK (id = 1),"
+                + " currency TEXT NOT NULL CHECK (currency IN ('USD', 'PYG')),"
+                + " base_currency TEXT NOT NULL CHECK (base_currency IN ('USD', 'PYG')),"
+                + " pyg_per_usd TEXT) STRICT");
+        sql.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+    }
+
+    private static void upgradeSettingsTable(Statement sql, int version) throws SQLException {
+        if (version == 1) {
+            createSettingsTable(sql);
+        } else if (version == 2) {
+            sql.execute("ALTER TABLE session_settings ADD COLUMN base_currency TEXT NOT NULL DEFAULT 'USD'"
+                    + " CHECK (base_currency IN ('USD', 'PYG'))");
+            sql.execute("ALTER TABLE session_settings ADD COLUMN pyg_per_usd TEXT");
+            sql.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+        }
+    }
+
+    private static int checkSchema(Statement sql) throws SQLException, IOException {
         try (ResultSet row = sql.executeQuery("PRAGMA application_id")) {
             if (!row.next() || row.getInt(1) != APPLICATION_ID) {
                 throw new IOException("Choose a Quotation Builder session database.");
             }
         }
         try (ResultSet row = sql.executeQuery("PRAGMA user_version")) {
-            if (!row.next() || row.getInt(1) != SCHEMA_VERSION) {
+            int version = row.next() ? row.getInt(1) : 0;
+            if (version < 1 || version > SCHEMA_VERSION) {
                 throw new IOException("This version of the app cannot open the selected database version.");
             }
+            return version;
+        }
+    }
+
+    private static CurrencySettings readCurrencySettings(Statement sql, int version) throws SQLException, IOException {
+        String columns = version == 2 ? "currency" : "currency, base_currency, pyg_per_usd";
+        try (ResultSet row = sql.executeQuery("SELECT " + columns + " FROM session_settings WHERE id = 1")) {
+            if (!row.next()) {
+                throw new IOException("The session database is missing its currency setting.");
+            }
+            SessionCurrency display = SessionCurrency.valueOf(row.getString("currency"));
+            if (version == 2) {
+                return new CurrencySettings(display, display, null);
+            }
+            SessionCurrency base = SessionCurrency.valueOf(row.getString("base_currency"));
+            String rate = row.getString("pyg_per_usd");
+            return new CurrencySettings(base, display, rate == null ? null : new BigDecimal(rate));
+        }
+    }
+
+    private static void writeCurrencySettings(Connection database, CurrencySettings settings) throws SQLException {
+        try (PreparedStatement save = database.prepareStatement(
+                "INSERT INTO session_settings (id, currency, base_currency, pyg_per_usd) VALUES (1, ?, ?, ?)"
+                        + " ON CONFLICT(id) DO UPDATE SET currency = excluded.currency,"
+                        + " base_currency = excluded.base_currency, pyg_per_usd = excluded.pyg_per_usd")) {
+            save.setString(1, settings.getDisplayCurrency().name());
+            save.setString(2, settings.getBaseCurrency().name());
+            BigDecimal rate = settings.getGuaraniesPerDollar();
+            save.setString(3, rate == null ? null : rate.toPlainString());
+            save.executeUpdate();
         }
     }
 

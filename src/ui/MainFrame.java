@@ -26,6 +26,7 @@ public class MainFrame extends JFrame {
     private final ClientsPanel clients;
     private final OfferingsPanel offerings;
     private final QuotesPanel quotes;
+    private final SettingsPanel settings;
     private Path sessionFile;
 
     public MainFrame(DataStore dataStore) {
@@ -35,12 +36,17 @@ public class MainFrame extends JFrame {
         clients = new ClientsPanel(dataStore);
         offerings = new OfferingsPanel(dataStore);
         quotes = new QuotesPanel(dataStore);
+        settings = new SettingsPanel(dataStore, () -> {
+            offerings.refreshCurrency();
+            quotes.refreshFromStore();
+        });
         setJMenuBar(createMenuBar());
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Clients", clients);
         tabs.addTab("Offerings", offerings);
         tabs.addTab("Quotations", quotes);
+        tabs.addTab("Settings", settings);
         tabs.addChangeListener(event -> {
             if (tabs.getSelectedComponent() == quotes) {
                 quotes.refreshFromStore();
@@ -155,6 +161,7 @@ public class MainFrame extends JFrame {
             clients.resetForSession();
             offerings.resetForSession();
             quotes.resetForSession();
+            settings.refreshFromStore();
             setSessionFile(selected);
         } catch (IOException error) {
             JOptionPane.showMessageDialog(this, error.getMessage(), "Could Not Load Session", JOptionPane.ERROR_MESSAGE);

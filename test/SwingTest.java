@@ -25,6 +25,7 @@ import javax.swing.Timer;
 import model.Client;
 import model.Offering;
 import model.Quote;
+import model.SessionCurrency;
 import storage.DataStore;
 import ui.MainFrame;
 
@@ -48,15 +49,16 @@ public class SwingTest {
                 test.frame.dispose();
             }
         });
-        System.out.println("Swing integration tests passed (4 groups).");
+        System.out.println("Swing integration tests passed (5 groups).");
     }
 
     private void run() {
         frame.setVisible(true);
-        ModelTest.check(frame.isShowing() && tabs.getTabCount() == 3, "main window and all tabs");
+        ModelTest.check(frame.isShowing() && tabs.getTabCount() == 4, "main window and all tabs");
         testClientActions();
         testOfferingActions();
         testQuoteActions();
+        testCurrencySettings();
         testRelationshipChanges();
     }
 
@@ -112,7 +114,7 @@ public class SwingTest {
         expectError(offerings, "Delete", "Select an offering to delete");
         for (String invalid : new String[] {"abc", "-1", "NaN", "Infinity", "-Infinity"}) {
             fillOffering(offerings, "Design", "Example", invalid);
-            expectError(offerings, "Add Offering", invalid.equals("abc") ? "numerical unit price" : "finite number");
+            expectError(offerings, "Add Offering", "finite number");
         }
         ModelTest.check(store.getOfferingCount() == 0, "invalid offerings were never added");
         fillOffering(offerings, "", "", "15");
@@ -140,7 +142,7 @@ public class SwingTest {
                 "updating the exact offering saves its line breaks");
         click(offerings, "Clear Form");
         ModelTest.check(list.isSelectionEmpty() && description.getText().isEmpty()
-                && field(offerings, "Unit price").getText().isEmpty(), "clear offering form");
+                && field(offerings, "Unit price (USD)").getText().isEmpty(), "clear offering form");
         search(offerings, "Search by name", "Missing");
         ModelTest.check(list.getModel().getSize() == 0, "offering no-match search");
         click(offerings, "Show All");
@@ -173,7 +175,7 @@ public class SwingTest {
         choose(clients, " rIv ", store.getClient(1));
         ModelTest.check(clients.getText().contains("studio@example.com"), "selection displays the exact client");
         click(quotes, "Calculate");
-        label(quotes, "Subtotal: 0.00");
+        label(quotes, "Subtotal: USD 0.00");
         expectError(quotes, "Save Quote", "Add at least one item");
 
         offerings.setText("eSIG");
@@ -204,20 +206,20 @@ public class SwingTest {
         ModelTest.check(items.getModel().getSize() == 3, "add three items");
         items.setSelectedIndex(2);
         click(quotes, "Remove Item");
-        label(quotes, "Subtotal: 292.50");
+        label(quotes, "Subtotal: USD 292.50");
 
         JTextField discount = field(quotes, "Discount (%)");
         for (String invalid : new String[] {"abc", "-1", "101", "NaN", "Infinity"}) {
             discount.setText(invalid);
             expectError(quotes, "Calculate", invalid.equals("abc") ? "numerical discount" : "between 0 and 100");
         }
-        label(quotes, "Total: 292.50 (0.0% discount)");
+        label(quotes, "Total: USD 292.50 (0.0% discount)");
         discount.setText("100");
         click(quotes, "Calculate");
-        label(quotes, "Total: 0.00 (100.0% discount)");
+        label(quotes, "Total: USD 0.00 (100.0% discount)");
         discount.setText("10");
         click(quotes, "Calculate");
-        label(quotes, "Total: 263.25 (10.0% discount)");
+        label(quotes, "Total: USD 263.25 (10.0% discount)");
 
         JTextField date = field(quotes, "Date (YYYY-MM-DD)");
         date.setText("2026-02-30");
@@ -250,7 +252,7 @@ public class SwingTest {
                 "open restores the selected quotation");
         ModelTest.check(date.getText().equals("2026-11-23") && statuses.getSelectedItem() == Quote.Status.SENT
                 && discount.getText().equals("10.0"), "open restores date, status and discount");
-        label(quotes, "Total: 263.25 (10.0% discount)");
+        label(quotes, "Total: USD 263.25 (10.0% discount)");
         click(quotes, "Show All");
         capture("quotations.png");
 
@@ -274,6 +276,62 @@ public class SwingTest {
         System.out.println("PASS Swing quotation buttons, totals, reopen, update, and invalid input");
     }
 
+    private void testCurrencySettings() {
+        Component quotes = tab("Quotations");
+        JTextField selectedOffering = field(quotes, "Offering");
+        choose(selectedOffering, "Design", store.getOffering(1));
+        Component settings = tab("Settings");
+        JComboBox<?> currency = combo(settings, "Currency");
+        JTextField rate = field(settings, "Guaran\u00edes per 1 USD");
+        ModelTest.check(currency.getSelectedItem() == SessionCurrency.USD, "USD is the default setting");
+        rate.setText("zero");
+        expectError(settings, "Apply", "Enter the exchange rate as a number");
+        for (String invalid : new String[] {"0", "-1", "1e400"}) {
+            rate.setText(invalid);
+            expectError(settings, "Apply", "positive exchange rate");
+        }
+        rate.setText("7500");
+        currency.setSelectedItem(SessionCurrency.PYG);
+        capture("settings.png");
+
+        Component offerings = tab("Offerings");
+        JTextField guaraniesPrice = field(offerings, "Unit price (PYG)");
+        JList<?> offeringList = list(offerings, "Registered offerings");
+        offeringList.setSelectedIndex(1);
+        ModelTest.check(guaraniesPrice.getText().equals("900000")
+                && rowText(offeringList, 1).contains("PYG 900.000"), "catalog and form use the entered exchange rate");
+        tab("Quotations");
+        label(quotes, "Subtotal: PYG 1.800.000");
+        label(quotes, "Total: PYG 1.350.000 (25.0% discount)");
+        ModelTest.check(selectedOffering.getText().contains("PYG 900.000")
+                && rowText(list(quotes, "Saved quotations"), 0).contains("PYG 1.350.000")
+                && rowText(list(quotes, "Quotation items"), 0).contains("PYG 900.000 = PYG 1.800.000"),
+                "selected offering, saved quote and line prices convert");
+        ModelTest.check(store.getQuote(0).getTotal() == 180 && store.getOffering(1).getUnitPrice() == 120,
+                "changing currency retains all numeric amounts");
+        capture("quotations-pyg.png");
+
+        tab("Offerings");
+        guaraniesPrice.setText("937500");
+        tab("Settings");
+        rate.setText("8000");
+        click(settings, "Apply");
+        tab("Quotations");
+        label(quotes, "Total: PYG 1.440.000 (25.0% discount)");
+        tab("Offerings");
+        ModelTest.check(guaraniesPrice.getText().equals("1000000") && store.getOffering(1).getUnitPrice() == 120,
+                "rate changes convert pending price edits without saving them");
+        click(offerings, "Update");
+        ModelTest.check(store.getOffering(1).getUnitPrice() == 125 && store.getQuote(0).getTotal() == 180,
+                "updating in PYG stores the equivalent USD and preserves quoted prices");
+
+        tab("Settings");
+        currency.setSelectedItem(SessionCurrency.USD);
+        tab("Quotations");
+        label(quotes, "Total: USD 180.00 (25.0% discount)");
+        System.out.println("PASS Settings rates convert catalog prices, quotation totals and line items");
+    }
+
     private void testRelationshipChanges() {
         Quote quote = store.getQuote(0);
         Component clients = tab("Clients");
@@ -289,7 +347,7 @@ public class SwingTest {
         JList<?> offeringList = list(offerings, "Registered offerings");
         offeringList.setSelectedIndex(1);
         expectError(offerings, "Delete", "used by a saved quotation");
-        field(offerings, "Unit price").setText("160");
+        field(offerings, "Unit price (USD)").setText("160");
         click(offerings, "Update");
         ModelTest.check(quote.getItems().get(0).getUnitPrice() == 120 && quote.getSubtotal() == 240,
                 "stored item keeps its original price after offering update");
@@ -302,7 +360,7 @@ public class SwingTest {
         ModelTest.check(field(quotes, "Client").getText().contains("Alex Rivera Studio"),
                 "selected client label reflects cross-tab changes");
         addItem(quotes, 1, "1");
-        label(quotes, "Subtotal: 400.00");
+        label(quotes, "Subtotal: USD 400.00");
         ModelTest.check(quote.getItems().size() == 1, "new draft line uses new price without changing saved quote");
 
         // A draft alone does not prevent another tab from deleting its offering.
@@ -316,7 +374,7 @@ public class SwingTest {
         ModelTest.check(quote.getItems().size() == 1, "stale draft cannot replace saved quote");
         saved.setSelectedIndex(0);
         click(quotes, "Open");
-        label(quotes, "Subtotal: 240.00");
+        label(quotes, "Subtotal: USD 240.00");
         click(quotes, "Delete Quote");
         ModelTest.check(store.getQuoteCount() == 0, "delete opened quotation");
         tab("Offerings");
@@ -352,7 +410,7 @@ public class SwingTest {
     private static void fillOffering(Component panel, String name, String description, String price) {
         field(panel, "Name").setText(name);
         descriptionField(panel).setText(description);
-        field(panel, "Unit price").setText(price);
+        field(panel, "Unit price (USD)").setText(price);
     }
 
     private static JTextArea descriptionField(Component panel) {
@@ -431,6 +489,11 @@ public class SwingTest {
 
     private static JList<?> list(Component panel, String name) {
         return find(panel, JList.class, found -> name.equals(found.getAccessibleContext().getAccessibleName()));
+    }
+
+    private static <T> String rowText(JList<T> list, int row) {
+        T value = list.getModel().getElementAt(row);
+        return ((JLabel) list.getCellRenderer().getListCellRendererComponent(list, value, row, false, false)).getText();
     }
 
     private static <T extends Component> T find(Component root, Class<T> type, Predicate<T> matches) {
